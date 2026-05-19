@@ -32,6 +32,7 @@ import { FinancialService } from './financialService'
 import { ReconciliationService } from './reconciliationService'
 import { RecurringTransactionService } from './recurringTransactionService'
 import { KitchenService } from './kitchenService'
+import { CheckoutMonitorService } from './checkoutMonitorService'
 import { SchoolCrudService } from './schoolCrudService'
 import { SpreadsheetExportService } from './spreadsheetExportService'
 
@@ -122,6 +123,12 @@ export const recurringTransactionService = new RecurringTransactionService({ rec
 export const spreadsheetExportService = new SpreadsheetExportService(schoolCrudService)
 export const kitchenService = new KitchenService({ schoolCrudService })
 export const eventService = new EventService({ schoolCrudService })
+export const checkoutMonitorService = new CheckoutMonitorService({
+  database,
+  schoolCrudService,
+  supabase,
+  hasSupabaseConfig,
+})
 
 export {
   database,

@@ -14,28 +14,36 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  ShieldCheck,
+  UserCheck,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { ROLE_LABELS } from '../core/auth/permissions'
 import { useRole } from '../core/auth/roleContext'
+import { useFeatureFlags } from '../core/config/featureFlagsContext'
 
 const navItems = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'secretaria'] },
-  { to: '/families', label: 'Famílias', icon: Users, roles: ['admin', 'secretaria'] },
-  { to: '/students', label: 'Alunos', icon: GraduationCap, roles: ['admin', 'secretaria'] },
-  { to: '/funcionarios', label: 'Funcionários', icon: BriefcaseBusiness, roles: ['admin', 'secretaria'] },
-  { to: '/eventos', label: 'Eventos', icon: CalendarHeart, roles: ['admin', 'secretaria'] },
-  { to: '/cozinha', label: 'Cozinha', icon: Soup, roles: ['admin', 'cozinha'] },
-  { to: '/live', label: 'Live', icon: TrafficCone, roles: ['admin', 'secretaria', 'professor'] },
-  { to: '/finance', label: 'Financeiro', icon: CreditCard, roles: ['admin', 'financeiro'] },
-  { to: '/pedagogico', label: 'Pedagógico', icon: BookUser, roles: ['admin', 'secretaria', 'professor'] },
-  { to: '/patrimonio', label: 'Patrimônio', icon: Landmark, roles: ['admin', 'financeiro', 'secretaria', 'professor'] },
+  { to: '/admin', label: 'Painel Admin', icon: ShieldCheck, roles: ['super_admin'], moduleKey: null },
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['super_admin', 'admin', 'secretaria'], moduleKey: 'dashboard' },
+  { to: '/families', label: 'Famílias', icon: Users, roles: ['super_admin', 'admin', 'secretaria'], moduleKey: 'familias' },
+  { to: '/students', label: 'Alunos', icon: GraduationCap, roles: ['super_admin', 'admin', 'secretaria'], moduleKey: 'alunos' },
+  { to: '/funcionarios', label: 'Funcionários', icon: BriefcaseBusiness, roles: ['super_admin', 'admin', 'secretaria'], moduleKey: 'funcionarios' },
+  { to: '/eventos', label: 'Eventos', icon: CalendarHeart, roles: ['super_admin', 'admin', 'secretaria'], moduleKey: 'eventos' },
+  { to: '/cozinha', label: 'Cozinha', icon: Soup, roles: ['super_admin', 'admin', 'cozinha'], moduleKey: 'cozinha' },
+  { to: '/live', label: 'Live', icon: TrafficCone, roles: ['super_admin', 'admin', 'secretaria', 'professor'], moduleKey: 'live' },
+  { to: '/checkout', label: 'Saída de Alunos', icon: UserCheck, roles: ['super_admin', 'admin', 'secretaria', 'professor'], moduleKey: 'checkout' },
+  { to: '/finance', label: 'Financeiro', icon: CreditCard, roles: ['super_admin', 'admin', 'financeiro'], moduleKey: 'financeiro' },
+  { to: '/pedagogico', label: 'Pedagógico', icon: BookUser, roles: ['super_admin', 'admin', 'secretaria', 'professor'], moduleKey: 'pedagogico' },
+  { to: '/patrimonio', label: 'Patrimônio', icon: Landmark, roles: ['super_admin', 'admin', 'financeiro', 'secretaria', 'professor'], moduleKey: 'patrimonio' },
 ]
 
 export default function AppShell({ title, subtitle, children }) {
   const { role, setRole, isDemoMode, user, signOut } = useRole()
-  const visibleNavItems = navItems.filter((item) => item.roles.includes(role))
+  const { isModuleEnabled, schoolName } = useFeatureFlags()
+  const visibleNavItems = navItems.filter(
+    (item) => item.roles.includes(role) && (item.moduleKey === null || isModuleEnabled(item.moduleKey)),
+  )
   const [menuOpen, setMenuOpen] = useState(false)
   const [desktopCollapsed, setDesktopCollapsed] = useState(() => {
     const stored = window.localStorage.getItem('cav_os_sidebar_collapsed')
@@ -56,8 +64,8 @@ export default function AppShell({ title, subtitle, children }) {
               <LayoutDashboard className="h-4 w-4 text-white" />
             </div>
             <div>
-              <p className="text-[10px] uppercase tracking-[0.22em] text-sky-700">Colégio Alta Vista</p>
-              <p className="text-sm font-semibold text-slate-900">CAV-OS</p>
+              <p className="text-[10px] uppercase tracking-[0.22em] text-sky-700">{schoolName}</p>
+              <p className="text-sm font-semibold text-slate-900">VeritusOS</p>
             </div>
           </div>
           <button
@@ -94,8 +102,8 @@ export default function AppShell({ title, subtitle, children }) {
               </div>
               {!desktopCollapsed ? (
                 <div className="min-w-0">
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-sky-200/80">Colégio Alta Vista</p>
-                  <h1 className="truncate text-base font-semibold leading-tight">CAV-OS</h1>
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-sky-200/80">{schoolName}</p>
+                  <h1 className="truncate text-base font-semibold leading-tight">VeritusOS</h1>
                 </div>
               ) : null}
             </div>
@@ -181,7 +189,7 @@ export default function AppShell({ title, subtitle, children }) {
                 <LogOut className="h-4 w-4" />
               </button>
             ) : (
-              <p className="text-[10px] text-sky-300/60">CAV-OS v1.0 MVP</p>
+              <p className="text-[10px] text-sky-300/60">VeritusOS v1.0 MVP</p>
             )}
           </div>
         </aside>
@@ -190,7 +198,7 @@ export default function AppShell({ title, subtitle, children }) {
         <main className="w-full min-w-0 flex-1 px-4 py-5 sm:px-6 lg:px-8 lg:py-6 xl:px-10">
           <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-600">Colégio Alta Vista</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-600">{schoolName}</p>
               <h2 className="mt-1 text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl">{title}</h2>
               {subtitle ? <p className="mt-1 text-sm text-slate-500">{subtitle}</p> : null}
             </div>

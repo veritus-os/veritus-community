@@ -1,4 +1,5 @@
 export const ROLE_LABELS = {
+  super_admin: 'Super Admin',
   admin: 'Administrador',
   secretaria: 'Secretaria',
   cozinha: 'Cozinha',
@@ -7,6 +8,8 @@ export const ROLE_LABELS = {
 }
 
 const ROLE_ALIASES = {
+  super_admin: 'super_admin',
+  superadmin: 'super_admin',
   admin: 'admin',
   administrador: 'admin',
   secretaria: 'secretaria',
@@ -16,6 +19,17 @@ const ROLE_ALIASES = {
 }
 
 export const ROLE_PERMISSIONS = {
+  super_admin: {
+    canManageFamilies: true,
+    canManageStudents: true,
+    canManageEvents: true,
+    canUseKitchen: true,
+    kitchenReadOnly: false,
+    canViewPortaria: true,
+    canViewFinance: true,
+    canManageUsers: true,
+    canAccessAdmin: true,
+  },
   admin: {
     canManageFamilies: true,
     canManageStudents: true,
@@ -25,6 +39,7 @@ export const ROLE_PERMISSIONS = {
     canViewPortaria: true,
     canViewFinance: true,
     canManageUsers: true,
+    canAccessAdmin: false,
   },
   secretaria: {
     canManageFamilies: true,
@@ -83,15 +98,17 @@ export function getAllowedModules(role) {
   if (!normalizedRole) return []
 
   return [
-    { key: 'dashboard', path: '/dashboard', label: 'Dashboard', roles: ['admin', 'secretaria'] },
-    { key: 'familias', path: '/families', label: 'Famílias', roles: ['admin', 'secretaria'] },
-    { key: 'alunos', path: '/students', label: 'Alunos', roles: ['admin', 'secretaria'] },
-    { key: 'funcionarios', path: '/funcionarios', label: 'Funcionários', roles: ['admin', 'secretaria'] },
-    { key: 'eventos', path: '/eventos', label: 'Eventos', roles: ['admin', 'secretaria'] },
-    { key: 'cozinha', path: '/cozinha', label: 'Cozinha', roles: ['admin', 'cozinha'] },
-    { key: 'live', path: '/live', label: 'Live', roles: ['admin', 'secretaria', 'professor'] },
-    { key: 'financeiro', path: '/finance', label: 'Financeiro', roles: ['admin', 'financeiro'] },
-    { key: 'pedagogico', path: '/pedagogico', label: 'Pedagógico', roles: ['admin', 'secretaria', 'professor'] },
-    { key: 'patrimonio', path: '/patrimonio', label: 'Patrimônio', roles: ['admin', 'financeiro', 'secretaria', 'professor'] },
+    { key: 'admin', path: '/admin', label: 'Painel Admin', roles: ['super_admin'] },
+    { key: 'dashboard', path: '/dashboard', label: 'Dashboard', roles: ['super_admin', 'admin', 'secretaria'] },
+    { key: 'familias', path: '/families', label: 'Famílias', roles: ['super_admin', 'admin', 'secretaria'] },
+    { key: 'alunos', path: '/students', label: 'Alunos', roles: ['super_admin', 'admin', 'secretaria'] },
+    { key: 'funcionarios', path: '/funcionarios', label: 'Funcionários', roles: ['super_admin', 'admin', 'secretaria'] },
+    { key: 'eventos', path: '/eventos', label: 'Eventos', roles: ['super_admin', 'admin', 'secretaria'] },
+    { key: 'cozinha', path: '/cozinha', label: 'Cozinha', roles: ['super_admin', 'admin', 'cozinha'] },
+    { key: 'live', path: '/live', label: 'Live', roles: ['super_admin', 'admin', 'secretaria', 'professor'] },
+    { key: 'checkout', path: '/checkout', label: 'Saída de Alunos', roles: ['super_admin', 'admin', 'secretaria', 'professor'] },
+    { key: 'financeiro', path: '/finance', label: 'Financeiro', roles: ['super_admin', 'admin', 'financeiro'] },
+    { key: 'pedagogico', path: '/pedagogico', label: 'Pedagógico', roles: ['super_admin', 'admin', 'secretaria', 'professor'] },
+    { key: 'patrimonio', path: '/patrimonio', label: 'Patrimônio', roles: ['super_admin', 'admin', 'financeiro', 'secretaria', 'professor'] },
   ].filter((module) => module.roles.includes(normalizedRole))
 }

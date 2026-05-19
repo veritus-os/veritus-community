@@ -72,6 +72,10 @@ function createSeed() {
       tag_registry: 8,
       financial_records: 100,
       audit_logs: 3,
+      activity_tags: 0,
+      student_activity_tags: 0,
+      student_checkout_daily: 0,
+      student_checkout_logs: 0,
       asset_catalog: 10,
       library_books: 10,
       categories: defaultChartOfAccounts.length,
@@ -459,6 +463,10 @@ function createSeed() {
       { id: 5, student_id: 5, class_name: '9A', attendance_date: '2026-04-14', status: 'presente', employee_id: 5, notes: '', current_activity: 'plantão', exit_time: null, created_at: createdAt, updated_at: createdAt },
     ],
     categories: defaultChartOfAccounts.map((cat) => ({ ...cat, created_at: createdAt, updated_at: createdAt })),
+    activity_tags: [],
+    student_activity_tags: [],
+    student_checkout_daily: [],
+    student_checkout_logs: [],
     contracts: [],
     bank_statements: [],
     recurring_templates: [],
@@ -491,6 +499,10 @@ function normalizeShape(data) {
     attendance_records: Array.isArray(data?.attendance_records) ? data.attendance_records : seed.attendance_records,
     financial_records: Array.isArray(data?.financial_records) ? data.financial_records : seed.financial_records,
     audit_logs: Array.isArray(data?.audit_logs) ? data.audit_logs : seed.audit_logs,
+    activity_tags: Array.isArray(data?.activity_tags) ? data.activity_tags : seed.activity_tags,
+    student_activity_tags: Array.isArray(data?.student_activity_tags) ? data.student_activity_tags : seed.student_activity_tags,
+    student_checkout_daily: Array.isArray(data?.student_checkout_daily) ? data.student_checkout_daily : seed.student_checkout_daily,
+    student_checkout_logs: Array.isArray(data?.student_checkout_logs) ? data.student_checkout_logs : seed.student_checkout_logs,
     asset_catalog: Array.isArray(data?.asset_catalog) ? data.asset_catalog : seed.asset_catalog,
     library_books: Array.isArray(data?.library_books) ? data.library_books : seed.library_books,
     categories: Array.isArray(data?.categories) ? data.categories : seed.categories,
@@ -598,6 +610,23 @@ function normalizeShape(data) {
     ...item,
   }))
 
+  normalized.student_checkout_daily = normalized.student_checkout_daily.map((item) => ({
+    note: item.note ?? '',
+    verification_note: item.verification_note ?? '',
+    pickup_person_name: item.pickup_person_name ?? '',
+    pickup_guardian_name: item.pickup_guardian_name ?? '',
+    device_label: item.device_label ?? '',
+    ...item,
+  }))
+
+  normalized.student_checkout_logs = normalized.student_checkout_logs.map((item) => ({
+    note: item.note ?? '',
+    pickup_guardian_name: item.pickup_guardian_name ?? '',
+    pickup_person_name: item.pickup_person_name ?? '',
+    device_label: item.device_label ?? '',
+    ...item,
+  }))
+
   normalized.asset_catalog = normalized.asset_catalog.map((item) => ({
     valor: Number(item.valor || 0),
     ...item,
@@ -625,6 +654,10 @@ function normalizeShape(data) {
   normalized.counters.tag_registry = Math.max(normalized.counters.tag_registry || 0, ...normalized.tag_registry.map((item) => Number(item.id) || 0))
   normalized.counters.financial_records = Math.max(normalized.counters.financial_records || 0, ...normalized.financial_records.map((item) => Number(item.id) || 0))
   normalized.counters.audit_logs = Math.max(normalized.counters.audit_logs || 0, ...normalized.audit_logs.map((item) => Number(item.id) || 0))
+  normalized.counters.activity_tags = Math.max(normalized.counters.activity_tags || 0, ...normalized.activity_tags.map((item) => Number(item.id) || 0), 0)
+  normalized.counters.student_activity_tags = Math.max(normalized.counters.student_activity_tags || 0, ...normalized.student_activity_tags.map((item) => Number(item.id) || 0), 0)
+  normalized.counters.student_checkout_daily = Math.max(normalized.counters.student_checkout_daily || 0, ...normalized.student_checkout_daily.map((item) => Number(item.id) || 0), 0)
+  normalized.counters.student_checkout_logs = Math.max(normalized.counters.student_checkout_logs || 0, ...normalized.student_checkout_logs.map((item) => Number(item.id) || 0), 0)
   normalized.counters.asset_catalog = Math.max(normalized.counters.asset_catalog || 0, ...normalized.asset_catalog.map((item) => Number(item.id) || 0))
   normalized.counters.library_books = Math.max(normalized.counters.library_books || 0, ...normalized.library_books.map((item) => Number(item.id) || 0))
   normalized.counters.categories = Math.max(normalized.counters.categories || 0, ...normalized.categories.map((item) => Number(item.id) || 0))

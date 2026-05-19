@@ -221,7 +221,7 @@ export default function DashboardPage() {
   return (
     <AppShell
       title="Dashboard"
-      subtitle="Visão geral do Colégio Alta Vista"
+      subtitle="Visão geral da escola"
     >
       <ErrorBox message={error} />
 

@@ -61,7 +61,7 @@ create table if not exists public.pickup_requests (
   guardian_id uuid references public.profiles(id) on delete set null,
   status public.pickup_status_enum not null default 'idle',
   current_eta interval,
-  last_gps_location geography(point, 4326),
+  last_gps_location extensions.geography(point, 4326),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -150,8 +150,8 @@ security definer
 set search_path = public, extensions
 as $$
 declare
-  v_school_location geography := st_setsrid(st_makepoint(-46.6745, -23.5632), 4326)::geography;
-  v_parent_location geography := st_setsrid(st_makepoint(p_lng, p_lat), 4326)::geography;
+  v_school_location extensions.geography := st_setsrid(st_makepoint(-46.6745, -23.5632), 4326)::geography;
+  v_parent_location extensions.geography := st_setsrid(st_makepoint(p_lng, p_lat), 4326)::geography;
   v_distance double precision;
   v_notify boolean := false;
   v_status public.pickup_status_enum;

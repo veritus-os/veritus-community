@@ -50,6 +50,5 @@ group by
   lf.debt_status;
 
 grant select on public.family_centric_dashboard to anon, authenticated;
-grant select on public.family_debt_dashboard to anon, authenticated;
 
 commit;

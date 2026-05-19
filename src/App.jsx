@@ -27,11 +27,16 @@ import { useRole } from './core/auth/roleContext'
 import LoginPage from './pages/LoginPage'
 import DemoPage from './pages/DemoPage'
 import { EntityInfoProvider } from './components/EntityInfoDock'
+import AdminPage from './pages/AdminPage'
+import BugReporter from './components/BugReporter'
+import { FeatureFlagsProvider } from './core/config/featureFlagsContext'
+import StudentCheckoutPage from './pages/StudentCheckoutPage'
 
 function HomeRedirect() {
   const { role, isAuthenticated, isDemoMode } = useRole()
 
   const homeByRole = {
+    super_admin: '/admin',
     admin: '/dashboard',
     secretaria: '/dashboard',
     cozinha: '/cozinha',
@@ -48,7 +53,9 @@ function HomeRedirect() {
 function App() {
   return (
     <RoleProvider>
+      <FeatureFlagsProvider>
       <EntityInfoProvider>
+        <BugReporter />
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<LoginPage />} />
@@ -56,9 +63,17 @@ function App() {
           <Route path="/home" element={<HomeRedirect />} />
 
         <Route
+          path="/admin"
+          element={
+            <ProtectedRoute allowedRoles={['super_admin']} redirectTo="/home">
+              <AdminPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/dashboard"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'secretaria']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin', 'secretaria']} redirectTo="/home">
               <DashboardPage />
             </ProtectedRoute>
           }
@@ -67,7 +82,7 @@ function App() {
         <Route
           path="/families"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'secretaria']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin', 'secretaria']} redirectTo="/home">
               <FamiliesPage />
             </ProtectedRoute>
           }
@@ -75,7 +90,7 @@ function App() {
         <Route
           path="/students"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'secretaria']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin', 'secretaria']} redirectTo="/home">
               <StudentsPage />
             </ProtectedRoute>
           }
@@ -83,7 +98,7 @@ function App() {
         <Route
           path="/funcionarios"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'secretaria']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin', 'secretaria']} redirectTo="/home">
               <FuncionariosPage />
             </ProtectedRoute>
           }
@@ -92,7 +107,7 @@ function App() {
         <Route
           path="/eventos"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'secretaria']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin', 'secretaria']} redirectTo="/home">
               <EventsPage />
             </ProtectedRoute>
           }
@@ -100,7 +115,7 @@ function App() {
         <Route
           path="/eventos/gestao-servicos"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'secretaria']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin', 'secretaria']} redirectTo="/home">
               <EventsServicesManagementPage />
             </ProtectedRoute>
           }
@@ -109,7 +124,7 @@ function App() {
         <Route
           path="/eventos/arquivados"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'secretaria']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin', 'secretaria']} redirectTo="/home">
               <EventsArchivedPage />
             </ProtectedRoute>
           }
@@ -117,7 +132,7 @@ function App() {
         <Route
           path="/eventos/pedidos"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'secretaria']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin', 'secretaria']} redirectTo="/home">
               <EventRegistrationsPage />
             </ProtectedRoute>
           }
@@ -125,7 +140,7 @@ function App() {
         <Route
           path="/cozinha"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'cozinha']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin', 'cozinha']} redirectTo="/home">
               <KitchenDashboardPage />
             </ProtectedRoute>
           }
@@ -133,7 +148,7 @@ function App() {
         <Route
           path="/cozinha/relatorios"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'cozinha']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin', 'cozinha']} redirectTo="/home">
               <KitchenReportPage />
             </ProtectedRoute>
           }
@@ -141,7 +156,7 @@ function App() {
         <Route
           path="/cozinha/visao"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'cozinha']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin', 'cozinha']} redirectTo="/home">
               <KitchenAccessPage />
             </ProtectedRoute>
           }
@@ -150,7 +165,7 @@ function App() {
         <Route
           path="/pedagogico"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'secretaria', 'professor']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin', 'secretaria', 'professor']} redirectTo="/home">
               <PedagogicoPresencaPage />
             </ProtectedRoute>
           }
@@ -158,7 +173,7 @@ function App() {
         <Route
           path="/pedagogico/relatorios"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'secretaria', 'professor']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin', 'secretaria', 'professor']} redirectTo="/home">
               <PedagogicoRelatoriosPage />
             </ProtectedRoute>
           }
@@ -166,7 +181,7 @@ function App() {
         <Route
           path="/pedagogico/planejamento"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'secretaria', 'professor']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin', 'secretaria', 'professor']} redirectTo="/home">
               <PedagogicoPlanejamentoPage />
             </ProtectedRoute>
           }
@@ -174,7 +189,7 @@ function App() {
         <Route
           path="/pedagogico/arquivados"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'secretaria', 'professor']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin', 'secretaria', 'professor']} redirectTo="/home">
               <PedagogicoArquivadosPage />
             </ProtectedRoute>
           }
@@ -182,7 +197,7 @@ function App() {
         <Route
           path="/servicos"
           element={
-            <ProtectedRoute allowedRoles={['admin']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin']} redirectTo="/home">
               <ServicosPage />
             </ProtectedRoute>
           }
@@ -190,7 +205,7 @@ function App() {
         <Route
           path="/finance"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'financeiro']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin', 'financeiro']} redirectTo="/home">
               <FinancePage />
             </ProtectedRoute>
           }
@@ -199,15 +214,23 @@ function App() {
         <Route
           path="/live"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'secretaria', 'professor']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin', 'secretaria', 'professor']} redirectTo="/home">
               <PortariaLivePage />
             </ProtectedRoute>
           }
         />
+<Route
+  path="/checkout"
+  element={
+    <ProtectedRoute allowedRoles={['super_admin', 'admin', 'secretaria', 'professor']} redirectTo="/home">
+      <StudentCheckoutPage />
+    </ProtectedRoute>
+  }
+/>
         <Route
           path="/patrimonio"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'financeiro']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin', 'financeiro']} redirectTo="/home">
               <AssetsPage />
             </ProtectedRoute>
           }
@@ -215,7 +238,7 @@ function App() {
         <Route
           path="/patrimonio/biblioteca"
           element={
-            <ProtectedRoute allowedRoles={['admin', 'financeiro', 'secretaria', 'professor']} redirectTo="/home">
+            <ProtectedRoute allowedRoles={['super_admin', 'admin', 'financeiro', 'secretaria', 'professor']} redirectTo="/home">
               <BibliotecaPage />
             </ProtectedRoute>
           }
@@ -225,6 +248,7 @@ function App() {
           <Route path="*" element={<Navigate to="/home" replace />} />
         </Routes>
       </EntityInfoProvider>
+      </FeatureFlagsProvider>
     </RoleProvider>
   )
 }
