@@ -1,0 +1,43 @@
+{
+  "generated_at": "2026-05-19T20:04:59.866Z",
+  "operational_filter": {
+    "active_students": "SituacaoAlunoID = -1",
+    "active_memberships": "Removido = 0",
+    "active_classes": "AnoLetivo = 2026 AND Situacao = -1"
+  },
+  "counts": {
+    "raw_students": 760,
+    "raw_guardians": 915,
+    "raw_student_guardian_links": 1264,
+    "raw_student_records": 760,
+    "raw_classes": 128,
+    "raw_class_memberships": 1400,
+    "raw_contracts": 1397,
+    "raw_contract_class_links": 1399,
+    "active_students": 385,
+    "active_students_with_guardians": 385,
+    "active_students_without_guardians": 0,
+    "active_guardian_links": 798,
+    "pickup_authorized_links": 785,
+    "pickup_authorized_guardians": 519,
+    "active_classes": 37,
+    "active_classes_with_students": 37,
+    "active_classes_without_students": 0,
+    "active_memberships": 411,
+    "active_membership_students": 385,
+    "active_membership_classes": 37,
+    "guardians_with_active_students": 522
+  },
+  "duplicates": {
+    "student_ids": [],
+    "guardian_ids": [],
+    "class_ids": [],
+    "membership_ids": []
+  },
+  "review_candidates": [],
+  "warnings": {
+    "classes_without_students": 0,
+    "students_without_guardians": 0,
+    "pickup_authorization_anomalies": 0
+  }
+}
