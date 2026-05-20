@@ -128,6 +128,7 @@ export const checkoutMonitorService = new CheckoutMonitorService({
   schoolCrudService,
   supabase,
   hasSupabaseConfig,
+  allowLocalFallback: import.meta.env.DEV && import.meta.env.VITE_CHECKOUT_LOCAL_FALLBACK === 'true',
 })
 
 export {

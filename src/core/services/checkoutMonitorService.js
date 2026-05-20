@@ -42,6 +42,35 @@ function todayKey() {
   return normalizeDateOnly(nowIso())
 }
 
+function dateAtStart(value) {
+  const date = new Date(`${value}T00:00:00`)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function dateAtEnd(value) {
+  const date = new Date(`${value}T23:59:59.999`)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function resolveLogRange(period = 'today', from = '', to = '') {
+  const now = new Date()
+  const today = normalizeDateOnly(nowIso())
+  if (period === 'today') {
+    return { from: today, to: today }
+  }
+  if (period === 'week') {
+    const start = new Date(now)
+    start.setDate(start.getDate() - 6)
+    return { from: normalizeDateOnly(start.toISOString()), to: today }
+  }
+  if (period === 'month') {
+    const start = new Date(now)
+    start.setDate(start.getDate() - 29)
+    return { from: normalizeDateOnly(start.toISOString()), to: today }
+  }
+  return { from: normalizeDateOnly(from), to: normalizeDateOnly(to) }
+}
+
 function toArray(value) {
   return Array.isArray(value) ? value : []
 }
@@ -144,6 +173,113 @@ function mapBoardRow({
   }
 }
 
+function mapOperationalBoardRow(row) {
+  return {
+    student_id: Number(row.student_id),
+    family_id: null,
+    full_name: row.full_name,
+    class_name: row.class_name || 'Sem turma',
+    campus: row.campus_name || 'Campus pendente',
+    family_name: row.family_name || 'Família sem nome',
+    attendance_status: row.attendance_status || (normalizeCheckoutStatus(row.status) === 'absent' ? 'absent' : 'present'),
+    status: normalizeCheckoutStatus(row.status),
+    activities: dedupeActivities(toArray(row.activities)),
+    authorized_guardians: toArray(row.authorized_guardians).map((item) => ({
+      id: Number(item.id),
+      family_id: null,
+      full_name: item.full_name || 'Responsável',
+      authorized_to_pickup: Boolean(item.can_pickup ?? item.authorized_to_pickup),
+      phone: item.phone || '',
+      email: item.email || '',
+      relationship_type_code: item.relationship_type_code || '',
+      relationship_type_label: item.relationship_type_label || '',
+      is_financial_responsible: Boolean(item.is_financial_responsible),
+      is_didactic_responsible: Boolean(item.is_didactic_responsible),
+      is_primary_contact: Boolean(item.is_primary_contact),
+    })),
+    pickup_person_name: row.pickup_person_name || '',
+    pickup_guardian_id: row.pickup_guardian_id ? Number(row.pickup_guardian_id) : null,
+    pickup_guardian_name: row.pickup_guardian_name || '',
+    note: row.note || '',
+    verification_note: row.verification_note || '',
+    guardian_arrived_at: row.guardian_arrived_at || null,
+    guardian_arrived_by_name: row.guardian_arrived_by_name || '',
+    ready_for_pickup_at: row.ready_for_pickup_at || null,
+    ready_for_pickup_by_name: row.ready_for_pickup_by_name || '',
+    released_from_classroom_at: row.released_from_classroom_at || null,
+    released_from_classroom_by_name: row.released_from_classroom_by_name || '',
+    left_school_at: row.left_school_at || null,
+    left_school_by_name: row.left_school_by_name || '',
+    updated_at: row.updated_at || null,
+    updated_by_name: row.updated_by_name || '',
+    source_import_batch_id: row.source_import_batch_id || null,
+    raw_row_id: row.raw_row_id || null,
+    raw_payload_hash: row.raw_payload_hash || '',
+  }
+}
+
+function mergeOperationalCheckoutRow(baseRow, currentCheckoutRow = null, previousCheckoutRow = null) {
+  const merged = { ...baseRow }
+
+  if (currentCheckoutRow) {
+    Object.assign(merged, {
+      status: currentCheckoutRow.status || merged.status,
+      pickup_guardian_id: currentCheckoutRow.pickup_guardian_id ?? merged.pickup_guardian_id,
+      pickup_guardian_name: currentCheckoutRow.pickup_guardian_name ?? merged.pickup_guardian_name,
+      pickup_person_name: currentCheckoutRow.pickup_person_name ?? merged.pickup_person_name,
+      note: currentCheckoutRow.note ?? merged.note,
+      verification_note: currentCheckoutRow.verification_note ?? merged.verification_note,
+      guardian_arrived_at: currentCheckoutRow.guardian_arrived_at ?? merged.guardian_arrived_at,
+      guardian_arrived_by_name: currentCheckoutRow.guardian_arrived_by_name ?? merged.guardian_arrived_by_name,
+      ready_for_pickup_at: currentCheckoutRow.ready_for_pickup_at ?? merged.ready_for_pickup_at,
+      ready_for_pickup_by_name: currentCheckoutRow.ready_for_pickup_by_name ?? merged.ready_for_pickup_by_name,
+      released_from_classroom_at: currentCheckoutRow.released_from_classroom_at ?? merged.released_from_classroom_at,
+      released_from_classroom_by_name: currentCheckoutRow.released_from_classroom_by_name ?? merged.released_from_classroom_by_name,
+      left_school_at: currentCheckoutRow.left_school_at ?? merged.left_school_at,
+      left_school_by_name: currentCheckoutRow.left_school_by_name ?? merged.left_school_by_name,
+      updated_at: currentCheckoutRow.updated_at ?? merged.updated_at,
+      updated_by_name: currentCheckoutRow.updated_by_name ?? merged.updated_by_name,
+      source_system: currentCheckoutRow.source_system || merged.source_system,
+      source_table: currentCheckoutRow.source_table || merged.source_table,
+      source_id: currentCheckoutRow.source_id || merged.source_id,
+      source_import_batch_id: currentCheckoutRow.source_import_batch_id || merged.source_import_batch_id,
+      raw_row_id: currentCheckoutRow.raw_row_id || merged.raw_row_id,
+      raw_payload_hash: currentCheckoutRow.raw_payload_hash || merged.raw_payload_hash,
+      authorized_by_user_id: currentCheckoutRow.authorized_by_user_id ?? merged.authorized_by_user_id,
+      authorized_by_name: currentCheckoutRow.authorized_by_name ?? merged.authorized_by_name,
+    })
+  } else if (previousCheckoutRow && normalizeCheckoutStatus(previousCheckoutRow.status) !== 'left_school') {
+    Object.assign(merged, {
+      status: 'needs_verification',
+      verification_note: previousCheckoutRow.verification_note || 'Pendência do dia anterior',
+      note: previousCheckoutRow.note || merged.note,
+      pickup_person_name: previousCheckoutRow.pickup_person_name || merged.pickup_person_name,
+      pickup_guardian_id: previousCheckoutRow.pickup_guardian_id ?? merged.pickup_guardian_id,
+      pickup_guardian_name: previousCheckoutRow.pickup_guardian_name ?? merged.pickup_guardian_name,
+      guardian_arrived_at: previousCheckoutRow.guardian_arrived_at ?? merged.guardian_arrived_at,
+      guardian_arrived_by_name: previousCheckoutRow.guardian_arrived_by_name ?? merged.guardian_arrived_by_name,
+      ready_for_pickup_at: previousCheckoutRow.ready_for_pickup_at ?? merged.ready_for_pickup_at,
+      ready_for_pickup_by_name: previousCheckoutRow.ready_for_pickup_by_name ?? merged.ready_for_pickup_by_name,
+      released_from_classroom_at: previousCheckoutRow.released_from_classroom_at ?? merged.released_from_classroom_at,
+      released_from_classroom_by_name: previousCheckoutRow.released_from_classroom_by_name ?? merged.released_from_classroom_by_name,
+      left_school_at: null,
+      left_school_by_name: '',
+      updated_at: previousCheckoutRow.updated_at || merged.updated_at,
+      updated_by_name: previousCheckoutRow.updated_by_name || merged.updated_by_name,
+      source_system: previousCheckoutRow.source_system || merged.source_system,
+      source_table: previousCheckoutRow.source_table || merged.source_table,
+      source_id: previousCheckoutRow.source_id || merged.source_id,
+      source_import_batch_id: previousCheckoutRow.source_import_batch_id || merged.source_import_batch_id,
+      raw_row_id: previousCheckoutRow.raw_row_id || merged.raw_row_id,
+      raw_payload_hash: previousCheckoutRow.raw_payload_hash || merged.raw_payload_hash,
+      authorized_by_user_id: previousCheckoutRow.authorized_by_user_id ?? merged.authorized_by_user_id,
+      authorized_by_name: previousCheckoutRow.authorized_by_name ?? merged.authorized_by_name,
+    })
+  }
+
+  return merged
+}
+
 function filterBoardRows(rows, { campus = 'todos', query = '', includeAbsent = false } = {}) {
   const normalizedQuery = String(query || '').trim().toLowerCase()
   return rows.filter((row) => {
@@ -189,19 +325,25 @@ function clearOperationalFields(record) {
 }
 
 export class CheckoutMonitorService {
-  constructor({ database, schoolCrudService, supabase, hasSupabaseConfig }) {
+  constructor({ database, schoolCrudService, supabase, hasSupabaseConfig, allowLocalFallback = false }) {
     this.database = database
     this.schoolCrudService = schoolCrudService
     this.supabase = supabase
     this.hasSupabaseConfig = Boolean(hasSupabaseConfig && supabase)
+    this.allowLocalFallback = Boolean(allowLocalFallback)
   }
 
   isRealtimeEnabled() {
     return this.hasSupabaseConfig
   }
 
+  canUseLocalFallback() {
+    return this.allowLocalFallback
+  }
+
   subscribe(onChange) {
     if (!this.hasSupabaseConfig) {
+      if (!this.allowLocalFallback) return () => {}
       const handler = (event) => {
         if (event.key === LOCAL_STORAGE_KEY) onChange()
       }
@@ -213,7 +355,7 @@ export class CheckoutMonitorService {
       .channel('student-checkout-monitor')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'student_checkout_daily' }, onChange)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'student_checkout_logs' }, onChange)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, onChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'checkout_class_campus_assignments' }, onChange)
       .subscribe()
 
     return () => {
@@ -225,7 +367,12 @@ export class CheckoutMonitorService {
     assertCampus(filters.campus)
     const rows = this.hasSupabaseConfig
       ? await this.#listBoardFromSupabase()
-      : await this.#listBoardFromLocal()
+      : this.allowLocalFallback
+        ? await this.#listBoardFromLocal()
+        : []
+    if (!this.hasSupabaseConfig && !this.allowLocalFallback) {
+      throw new Error('O monitor de saída do piloto exige Supabase configurado.')
+    }
     return filterBoardRows(sortByName(rows), filters)
   }
 
@@ -233,7 +380,12 @@ export class CheckoutMonitorService {
     assertCampus(filters.campus)
     const rows = this.hasSupabaseConfig
       ? await this.#listLogsFromSupabase()
-      : await this.#listLogsFromLocal()
+      : this.allowLocalFallback
+        ? await this.#listLogsFromLocal()
+        : []
+    if (!this.hasSupabaseConfig && !this.allowLocalFallback) {
+      throw new Error('O monitor de saída do piloto exige Supabase configurado.')
+    }
 
     const normalizedQuery = String(filters.query || '').trim().toLowerCase()
     return rows.filter((row) => {
@@ -259,9 +411,14 @@ export class CheckoutMonitorService {
     deviceLabel = '',
     pickupGuardianId = null,
     pickupPersonName = '',
+    authorizedByName = '',
+    authorizedById = null,
     confirmed = false,
   }) {
     requireAuthenticatedActor(actorId, actorName)
+    if (!this.hasSupabaseConfig && !this.allowLocalFallback) {
+      throw new Error('O monitor de saída do piloto exige Supabase configurado.')
+    }
 
     const normalizedStatus = normalizeCheckoutStatus(nextStatus)
     if (!CHECKOUT_STATUSES.includes(normalizedStatus)) {
@@ -297,6 +454,10 @@ export class CheckoutMonitorService {
       throw new Error('Observação obrigatória para casos de verificação.')
     }
 
+    if (normalizedStatus === 'needs_verification' && !pickupGuardian && !pickupName && !row.pickup_person_name) {
+      throw new Error('Informe o nome da retirada excepcional antes de marcar "Necessita verificação".')
+    }
+
     if (normalizedStatus === 'left_school') {
       if (!confirmed) {
         throw new Error('Confirmação obrigatória antes de marcar saída final.')
@@ -323,6 +484,8 @@ export class CheckoutMonitorService {
         pickupGuardian,
         pickupGuardianId,
         pickupPersonName: pickupName,
+        authorizedByName: authorizedByName || actorName,
+        authorizedById: authorizedById || actorId,
       })
     }
 
@@ -339,11 +502,16 @@ export class CheckoutMonitorService {
       pickupGuardian,
       pickupGuardianId,
       pickupPersonName: pickupName,
+      authorizedByName: authorizedByName || actorName,
+      authorizedById: authorizedById || actorId,
     })
   }
 
   async resetDay({ actorName, actorId = null, actorRole = '', campus = 'todos', deviceLabel = '' }) {
     requireAuthenticatedActor(actorId, actorName)
+    if (!this.hasSupabaseConfig && !this.allowLocalFallback) {
+      throw new Error('O monitor de saída do piloto exige Supabase configurado.')
+    }
     if (!RESET_ROLES.includes(actorRole)) {
       throw new Error('Seu perfil não pode resetar o monitor diário de saída.')
     }
@@ -393,48 +561,25 @@ export class CheckoutMonitorService {
 
   async #listBoardFromSupabase() {
     const today = todayKey()
-    const [studentsRes, familiesRes, guardiansRes, attendanceRes, checkoutRes, activityTagRes, activityLinkRes] = await Promise.all([
-      this.supabase.from('students').select('id, family_id, full_name, class_name, segment, active_status').eq('active_status', true).order('full_name', { ascending: true }),
-      this.supabase.from('families').select('id, family_name, family_code, primary_contact_name'),
-      this.supabase.from('guardians').select('id, family_id, full_name, phone, email, authorized_to_pickup'),
-      this.supabase.from('attendance').select('student_id, attendance_date, status').eq('attendance_date', today),
+    const yesterday = normalizeDateOnly(new Date(Date.now() - 86400000).toISOString())
+    const [studentsRes, todayRes, yesterdayRes] = await Promise.all([
+      this.supabase.from('checkout_active_students_view').select('*').order('full_name', { ascending: true }),
       this.supabase.from('student_checkout_daily').select('*').eq('checkout_date', today),
-      this.supabase.from('activity_tags').select('id, label'),
-      this.supabase.from('student_activity_tags').select('student_id, activity_tag_id'),
+      this.supabase.from('student_checkout_daily').select('*').eq('checkout_date', yesterday),
     ])
 
-    const errors = [
-      studentsRes.error,
-      familiesRes.error,
-      guardiansRes.error,
-      attendanceRes.error,
-      checkoutRes.error,
-      activityTagRes.error,
-      activityLinkRes.error,
-    ].filter(Boolean)
-    if (errors.length > 0) {
-      throw new Error(errors[0].message || 'Não foi possível carregar o monitor de saída.')
-    }
+    const errors = [studentsRes.error, todayRes.error, yesterdayRes.error].filter(Boolean)
+    if (errors.length > 0) throw new Error(errors[0].message || 'Não foi possível carregar o monitor de saída.')
 
-    const students = toArray(studentsRes.data)
-    const families = toArray(familiesRes.data)
-    const guardians = toArray(guardiansRes.data).map(mapGuardianRow)
-    const attendanceRows = toArray(attendanceRes.data)
-    const checkoutRows = toArray(checkoutRes.data)
-    const activityLinks = toArray(activityLinkRes.data)
-    const activityCatalog = toArray(activityTagRes.data)
+    const todayByStudent = new Map(toArray(todayRes.data).map((item) => [Number(item.student_id), item]))
+    const yesterdayByStudent = new Map(toArray(yesterdayRes.data).map((item) => [Number(item.student_id), item]))
 
-    return students.map((student) =>
-      mapBoardRow({
-        student,
-        family: families.find((item) => Number(item.id) === Number(student.family_id)) || null,
-        attendanceRow: attendanceRows.find((item) => Number(item.student_id) === Number(student.id)) || null,
-        checkoutRow: checkoutRows.find((item) => Number(item.student_id) === Number(student.id)) || null,
-        guardians,
-        activityLinks,
-        activityCatalog,
-      }),
-    )
+    return toArray(studentsRes.data).map((row) => {
+      const currentCheckoutRow = todayByStudent.get(Number(row.student_id)) || null
+      const previousCheckoutRow = currentCheckoutRow ? null : yesterdayByStudent.get(Number(row.student_id)) || null
+      const mergedRow = mergeOperationalCheckoutRow(row, currentCheckoutRow, previousCheckoutRow)
+      return mapOperationalBoardRow(mergedRow)
+    })
   }
 
   async #listLogsFromLocal() {
@@ -451,19 +596,68 @@ export class CheckoutMonitorService {
   async #listLogsFromSupabase() {
     const [logsRes, studentsRes] = await Promise.all([
       this.supabase.from('student_checkout_logs').select('*').order('created_at', { ascending: false }).limit(300),
-      this.supabase.from('students').select('id, full_name'),
+      this.supabase.from('checkout_active_students_view').select('student_id, full_name, campus_name'),
     ])
     if (logsRes.error) throw new Error(logsRes.error.message)
     if (studentsRes.error) throw new Error(studentsRes.error.message)
 
-    const studentsById = new Map(toArray(studentsRes.data).map((item) => [Number(item.id), item.full_name]))
+    const studentsById = new Map(toArray(studentsRes.data).map((item) => [Number(item.student_id), item.full_name]))
     return toArray(logsRes.data).map((item) => ({
       ...item,
       student_name: studentsById.get(Number(item.student_id)) || 'Aluno',
     }))
   }
 
-  #buildNextRecord({ currentRecord, row, nextStatus, actorName, actorId, note, campus, deviceLabel, pickupGuardian, pickupGuardianId, pickupPersonName }) {
+  async listStudentLogs({ studentId, period = 'month', from = '', to = '', offset = 0, limit = 20 } = {}) {
+    const normalizedStudentId = Number(studentId)
+    if (!normalizedStudentId) return { rows: [], hasMore: false, range: resolveLogRange(period, from, to) }
+
+    const range = resolveLogRange(period, from, to)
+    const filterRows = (rows) => {
+      const start = dateAtStart(range.from)
+      const end = dateAtEnd(range.to)
+      return rows.filter((item) => {
+        if (Number(item.student_id) !== normalizedStudentId) return false
+        if (!start && !end) return true
+        const createdAt = item.created_at ? new Date(item.created_at) : null
+        if (!createdAt || Number.isNaN(createdAt.getTime())) return false
+        if (start && createdAt < start) return false
+        if (end && createdAt > end) return false
+        return true
+      })
+    }
+
+    if (this.hasSupabaseConfig) {
+      const { data, error } = await this.supabase
+        .from('student_checkout_logs')
+        .select('*')
+        .eq('student_id', normalizedStudentId)
+        .order('created_at', { ascending: false })
+        .limit(500)
+      if (error) throw new Error(error.message)
+      const rows = filterRows(toArray(data))
+      return {
+        rows: rows.slice(offset, offset + limit),
+        hasMore: rows.length > offset + limit,
+        range,
+      }
+    }
+
+    if (!this.allowLocalFallback) {
+      throw new Error('O monitor de saída do piloto exige Supabase configurado.')
+    }
+
+    const data = this.database.read()
+    const rows = filterRows(toArray(data.student_checkout_logs))
+      .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
+    return {
+      rows: rows.slice(offset, offset + limit),
+      hasMore: rows.length > offset + limit,
+      range,
+    }
+  }
+
+  #buildNextRecord({ currentRecord, row, nextStatus, actorName, actorId, note, campus, deviceLabel, pickupGuardian, pickupGuardianId, pickupPersonName, authorizedByName, authorizedById }) {
     const timestamp = nowIso()
     let base = {
       ...(currentRecord || {}),
@@ -481,6 +675,14 @@ export class CheckoutMonitorService {
       updated_by_name: actorName,
       updated_by_user_id: actorId,
       device_label: deviceLabel || currentRecord?.device_label || '',
+      source_system: row.source_system || currentRecord?.source_system || 'sponte',
+      source_table: row.source_table || currentRecord?.source_table || 'checkout_active_students_view',
+      source_id: String(row.source_id || row.student_id || currentRecord?.source_id || ''),
+      source_import_batch_id: row.source_import_batch_id || currentRecord?.source_import_batch_id || null,
+      raw_row_id: row.raw_row_id || currentRecord?.raw_row_id || null,
+      raw_payload_hash: row.raw_payload_hash || currentRecord?.raw_payload_hash || '',
+      authorized_by_user_id: authorizedById || currentRecord?.authorized_by_user_id || actorId,
+      authorized_by_name: authorizedByName || currentRecord?.authorized_by_name || actorName,
     }
 
     if (nextStatus === 'at_school' || nextStatus === 'absent') {
@@ -517,7 +719,7 @@ export class CheckoutMonitorService {
     return base
   }
 
-  #buildLog({ row, currentStatus, nextStatus, actorName, actorId, note, campus, deviceLabel, pickupGuardian, pickupPersonName }) {
+  #buildLog({ row, currentStatus, nextStatus, actorName, actorId, note, campus, deviceLabel, pickupGuardian, pickupPersonName, authorizedByName, authorizedById }) {
     return {
       student_id: Number(row.student_id),
       checkout_date: todayKey(),
@@ -531,6 +733,14 @@ export class CheckoutMonitorService {
       pickup_guardian_id: pickupGuardian ? Number(pickupGuardian.id) : null,
       pickup_guardian_name: pickupGuardian?.full_name || '',
       pickup_person_name: pickupPersonName || pickupGuardian?.full_name || '',
+      source_system: row.source_system || 'sponte',
+      source_table: row.source_table || 'checkout_active_students_view',
+      source_id: String(row.source_id || row.student_id || ''),
+      source_import_batch_id: row.source_import_batch_id || null,
+      raw_row_id: row.raw_row_id || null,
+      raw_payload_hash: row.raw_payload_hash || '',
+      authorized_by_user_id: authorizedById || actorId,
+      authorized_by_name: authorizedByName || actorName,
     }
   }
 
@@ -556,7 +766,7 @@ export class CheckoutMonitorService {
     data.attendance_records.push({ id, ...payload })
   }
 
-  async #transitionInLocal({ row, studentId, currentStatus, nextStatus, actorName, actorId, note, campus, deviceLabel, pickupGuardian, pickupGuardianId, pickupPersonName }) {
+  async #transitionInLocal({ row, studentId, currentStatus, nextStatus, actorName, actorId, note, campus, deviceLabel, pickupGuardian, pickupGuardianId, pickupPersonName, authorizedByName, authorizedById }) {
     const data = this.database.read()
     const today = todayKey()
     const checkoutIndex = toArray(data.student_checkout_daily).findIndex(
@@ -575,6 +785,8 @@ export class CheckoutMonitorService {
       pickupGuardian,
       pickupGuardianId,
       pickupPersonName,
+      authorizedByName,
+      authorizedById,
     })
     const log = this.#buildLog({
       row,
@@ -587,6 +799,8 @@ export class CheckoutMonitorService {
       deviceLabel,
       pickupGuardian,
       pickupPersonName,
+      authorizedByName,
+      authorizedById,
     })
 
     if (checkoutIndex >= 0) {
@@ -614,7 +828,7 @@ export class CheckoutMonitorService {
     return nextRecord
   }
 
-  async #transitionInSupabase({ row, studentId, currentStatus, nextStatus, actorName, actorId, note, campus, deviceLabel, pickupGuardian, pickupGuardianId, pickupPersonName }) {
+  async #transitionInSupabase({ row, studentId, currentStatus, nextStatus, actorName, actorId, note, campus, deviceLabel, pickupGuardian, pickupGuardianId, pickupPersonName, authorizedByName, authorizedById }) {
     const today = todayKey()
     const { data: currentRecord, error: currentError } = await this.supabase
       .from('student_checkout_daily')
@@ -636,6 +850,8 @@ export class CheckoutMonitorService {
       pickupGuardian,
       pickupGuardianId,
       pickupPersonName,
+      authorizedByName,
+      authorizedById,
     })
     const log = this.#buildLog({
       row,
@@ -648,6 +864,8 @@ export class CheckoutMonitorService {
       deviceLabel,
       pickupGuardian,
       pickupPersonName,
+      authorizedByName,
+      authorizedById,
     })
 
     if (currentRecord?.id) {
@@ -672,17 +890,6 @@ export class CheckoutMonitorService {
       }
       if (insertError) throw new Error(insertError.message)
     }
-
-    const attendancePayload = {
-      student_id: Number(studentId),
-      attendance_date: today,
-      status: nextStatus === 'absent' ? 'ausente' : 'presente',
-      notes: nextStatus === 'absent' ? 'Ausência marcada no monitor de saída.' : null,
-    }
-    const { error: attendanceError } = await this.supabase
-      .from('attendance')
-      .upsert(attendancePayload, { onConflict: 'student_id,attendance_date' })
-    if (attendanceError) throw new Error(attendanceError.message)
 
     const { error: logError } = await this.supabase.from('student_checkout_logs').insert(log)
     if (logError) throw new Error(logError.message)
