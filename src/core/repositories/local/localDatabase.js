@@ -563,10 +563,10 @@ function normalizeShape(data) {
   }))
 
   normalized.employees = normalized.employees.map((employee) => ({
-    access_type: ['administrador', 'secretaria', 'cozinha', 'financeiro', 'professor'].includes(employee.access_type)
+    access_type: ['administrador', 'secretaria', 'reception', 'infantil_coordination', 'fundamental_coordination', 'support', 'cozinha', 'financeiro', 'professor'].includes(employee.access_type)
       ? employee.access_type
       : 'secretaria',
-    role: ['administrador', 'secretaria', 'cozinha', 'financeiro', 'professor'].includes(employee.role)
+    role: ['administrador', 'secretaria', 'reception', 'infantil_coordination', 'fundamental_coordination', 'support', 'cozinha', 'financeiro', 'professor'].includes(employee.role)
       ? employee.role
       : 'secretaria',
     ...employee,

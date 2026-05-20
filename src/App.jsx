@@ -39,6 +39,10 @@ function HomeRedirect() {
     super_admin: '/admin',
     admin: '/dashboard',
     secretaria: '/dashboard',
+    reception: '/checkout',
+    infantil_coordination: '/checkout',
+    fundamental_coordination: '/checkout',
+    support: '/checkout',
     cozinha: '/cozinha',
     financeiro: '/finance',
     professor: '/pedagogico',
@@ -219,14 +223,17 @@ function App() {
             </ProtectedRoute>
           }
         />
-<Route
-  path="/checkout"
-  element={
-    <ProtectedRoute allowedRoles={['super_admin', 'admin', 'secretaria', 'professor']} redirectTo="/home">
-      <StudentCheckoutPage />
-    </ProtectedRoute>
-  }
-/>
+        <Route
+          path="/checkout"
+          element={
+            <ProtectedRoute
+              allowedRoles={['super_admin', 'admin', 'secretaria', 'professor', 'reception', 'infantil_coordination', 'fundamental_coordination', 'support']}
+              redirectTo="/home"
+            >
+              <StudentCheckoutPage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/patrimonio"
           element={

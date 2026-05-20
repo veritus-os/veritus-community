@@ -22,7 +22,17 @@ function getRollingSixMonthStart(referenceDate = new Date()) {
   return date.toISOString()
 }
 
-const ALLOWED_EMPLOYEE_ACCESS_TYPES = ['administrador', 'secretaria', 'cozinha', 'financeiro', 'professor']
+const ALLOWED_EMPLOYEE_ACCESS_TYPES = [
+  'administrador',
+  'secretaria',
+  'reception',
+  'infantil_coordination',
+  'fundamental_coordination',
+  'support',
+  'cozinha',
+  'financeiro',
+  'professor',
+]
 const FINANCIAL_ITEM_TYPES = ['mensalidade', 'matrícula', 'material', 'livro_didático', 'alimentação', 'plantão', 'contraturno', 'extracurricular']
 const KNOWN_SCHOLARSHIP_TYPES = ['desconto comercial', 'SAES', 'SINPRO']
 

@@ -8,8 +8,8 @@ import {
 } from '../models/checkoutModels'
 
 const LOCAL_STORAGE_KEY = 'cav_os_school_data_v6'
-const RECEPTION_ROLES = ['super_admin', 'admin', 'secretaria']
-const CLASSROOM_ROLES = ['super_admin', 'admin', 'secretaria', 'professor']
+const RECEPTION_ROLES = ['super_admin', 'admin', 'secretaria', 'reception', 'support']
+const CLASSROOM_ROLES = ['super_admin', 'admin', 'secretaria', 'professor', 'infantil_coordination', 'fundamental_coordination', 'support']
 const RESET_ROLES = ['super_admin', 'admin', 'secretaria']
 
 const STATUS_ROLE_RULES = {

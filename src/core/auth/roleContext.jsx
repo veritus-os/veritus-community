@@ -10,7 +10,18 @@ const STORAGE_USER_KEY = 'cav_os_user_session'
 
 const DEFAULT_ROLE = 'secretaria'
 const DEFAULT_MODE = 'real'
-const ALLOWED_ROLES = ['super_admin', 'admin', 'secretaria', 'cozinha', 'financeiro', 'professor']
+const ALLOWED_ROLES = [
+  'super_admin',
+  'admin',
+  'secretaria',
+  'reception',
+  'infantil_coordination',
+  'fundamental_coordination',
+  'support',
+  'cozinha',
+  'financeiro',
+  'professor',
+]
 
 const RoleContext = createContext(null)
 

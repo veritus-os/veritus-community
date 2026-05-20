@@ -32,7 +32,13 @@ const navItems = [
   { to: '/eventos', label: 'Eventos', icon: CalendarHeart, roles: ['super_admin', 'admin', 'secretaria'], moduleKey: 'eventos' },
   { to: '/cozinha', label: 'Cozinha', icon: Soup, roles: ['super_admin', 'admin', 'cozinha'], moduleKey: 'cozinha' },
   { to: '/live', label: 'Live', icon: TrafficCone, roles: ['super_admin', 'admin', 'secretaria', 'professor'], moduleKey: 'live' },
-  { to: '/checkout', label: 'Saída de Alunos', icon: UserCheck, roles: ['super_admin', 'admin', 'secretaria', 'professor'], moduleKey: 'checkout' },
+  {
+    to: '/checkout',
+    label: 'Saída de Alunos',
+    icon: UserCheck,
+    roles: ['super_admin', 'admin', 'secretaria', 'professor', 'reception', 'infantil_coordination', 'fundamental_coordination', 'support'],
+    moduleKey: 'checkout',
+  },
   { to: '/finance', label: 'Financeiro', icon: CreditCard, roles: ['super_admin', 'admin', 'financeiro'], moduleKey: 'financeiro' },
   { to: '/pedagogico', label: 'Pedagógico', icon: BookUser, roles: ['super_admin', 'admin', 'secretaria', 'professor'], moduleKey: 'pedagogico' },
   { to: '/patrimonio', label: 'Patrimônio', icon: Landmark, roles: ['super_admin', 'admin', 'financeiro', 'secretaria', 'professor'], moduleKey: 'patrimonio' },
@@ -55,7 +61,7 @@ export default function AppShell({ title, subtitle, children }) {
   }, [desktopCollapsed])
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800">
+    <div className="min-h-screen overflow-x-hidden bg-slate-50 text-slate-800">
       <div className="flex min-h-screen w-full flex-col lg:flex-row">
         {/* Mobile header */}
         <div className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 shadow-sm lg:hidden">

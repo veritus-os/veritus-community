@@ -28,6 +28,26 @@ const LOG_FILTERS = [
 const RECENT_CALL_LIMIT = 5
 const SYNC_STALE_MS = 30000
 const BOARD_REFRESH_MS = 20000
+const CHECKOUT_VIEWS_BY_ROLE = {
+  super_admin: ['reception', 'classroom', 'support'],
+  admin: ['reception', 'classroom', 'support'],
+  secretaria: ['reception', 'classroom', 'support'],
+  support: ['reception', 'classroom', 'support'],
+  reception: ['reception'],
+  infantil_coordination: ['classroom'],
+  fundamental_coordination: ['classroom'],
+  professor: ['classroom'],
+}
+
+function getDefaultCheckoutView(role) {
+  if (role === 'support') return 'support'
+  if (role === 'infantil_coordination' || role === 'fundamental_coordination' || role === 'professor') return 'classroom'
+  return 'reception'
+}
+
+function getVisibleCheckoutViews(role) {
+  return CHECKOUT_VIEWS_BY_ROLE[role] || ['reception']
+}
 
 function actorNameFromUser(user, role) {
   return user?.full_name || user?.email || role || 'Operador'
@@ -171,7 +191,7 @@ function canRunClassroomAction(row, actionKey) {
 
 export default function StudentCheckoutPage() {
   const { role, user, isDemoMode } = useRole()
-  const [view, setView] = useState(role === 'professor' ? 'classroom' : 'reception')
+  const [view, setView] = useState(() => getDefaultCheckoutView(role))
   const [rows, setRows] = useState([])
   const [logs, setLogs] = useState([])
   const [campus, setCampus] = useState('todos')
@@ -316,8 +336,9 @@ export default function StudentCheckoutPage() {
   }, [loadData])
 
   useEffect(() => {
-    if (role === 'professor' && view !== 'classroom') {
-      setView('classroom')
+    const visibleViews = getVisibleCheckoutViews(role)
+    if (!visibleViews.includes(view)) {
+      setView(getDefaultCheckoutView(role))
     }
   }, [role, view])
 
@@ -679,7 +700,7 @@ export default function StudentCheckoutPage() {
       </section>
 
       <section className="mb-4 flex flex-wrap items-center gap-2">
-        {VIEW_OPTIONS.filter((item) => (role === 'professor' ? item.key === 'classroom' : true)).map((item) => (
+        {VIEW_OPTIONS.filter((item) => getVisibleCheckoutViews(role).includes(item.key)).map((item) => (
           <button
             key={item.key}
             type="button"
@@ -895,15 +916,15 @@ export default function StudentCheckoutPage() {
                         className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm shadow-sm transition hover:border-slate-300 hover:shadow"
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="font-semibold text-slate-900">{row.student_name}</p>
+                          <div className="min-w-0 flex-1">
+                            <p className="break-words font-semibold text-slate-900">{row.student_name}</p>
                             <p className="text-xs text-slate-500">{row.created_at ? new Date(row.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-'}</p>
                           </div>
-                          <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
+                          <span className="max-w-[46%] rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
                             {getCheckoutStatusLabel(row.previous_status)} → {getCheckoutStatusLabel(row.new_status)}
                           </span>
                         </div>
-                        <p className="mt-2 text-slate-700">{row.changed_by_name || '-'}{row.authorized_by_name ? ` • Autorizado por ${row.authorized_by_name}` : ''}</p>
+                        <p className="mt-2 break-words text-slate-700">{row.changed_by_name || '-'}{row.authorized_by_name ? ` • Autorizado por ${row.authorized_by_name}` : ''}</p>
                         <p className="text-slate-600">{row.pickup_guardian_name || row.pickup_person_name || '-'}</p>
                       </button>
                     ))}
@@ -1019,10 +1040,10 @@ function StudentProfilePanel({
   return (
     <aside className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Perfil operacional</p>
-          <h3 className="text-lg font-extrabold text-slate-900">{student?.full_name || 'Selecione um aluno'}</h3>
-          <p className="text-sm text-slate-500">{student ? `${student.class_name} • ${student.campus}` : 'Abra um cartão para ver histórico e ações.'}</p>
+          <h3 className="break-words text-lg font-extrabold text-slate-900">{student?.full_name || 'Selecione um aluno'}</h3>
+          <p className="break-words text-sm text-slate-500">{student ? `${student.class_name} • ${student.campus}` : 'Abra um cartão para ver histórico e ações.'}</p>
         </div>
         {student ? (
           <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getCheckoutStatusClass(student.status)}`}>
@@ -1145,10 +1166,10 @@ function StudentCard({
   return (
     <article className={`rounded-3xl border bg-white p-4 shadow-sm transition-all duration-200 ${highlight ? 'border-amber-300 bg-amber-50/50 ring-2 ring-amber-200' : 'border-slate-200'}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-lg font-extrabold text-slate-900">{row.full_name}</p>
-          <p className="text-sm text-slate-500">{row.class_name} • {row.campus}</p>
-          <p className="text-sm text-slate-500">{row.family_name}</p>
+        <div className="min-w-0 flex-1">
+          <p className="break-words text-lg font-extrabold text-slate-900">{row.full_name}</p>
+          <p className="break-words text-sm text-slate-500">{row.class_name} • {row.campus}</p>
+          <p className="break-words text-sm text-slate-500">{row.family_name}</p>
         </div>
         <div className="flex flex-col items-end gap-2">
           <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getCheckoutStatusClass(row.status)}`}>
@@ -1187,7 +1208,7 @@ function StudentCard({
         <p className="font-semibold text-slate-900">Pessoas autorizadas</p>
         <div className="mt-2 flex flex-wrap gap-2">
           {row.authorized_guardians.length ? row.authorized_guardians.map((item) => (
-            <span key={item.id} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+            <span key={item.id} className="max-w-full break-words rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
               {item.full_name}
             </span>
           )) : <span className="text-xs text-rose-700">Nenhuma pessoa autorizada cadastrada.</span>}

@@ -11,6 +11,10 @@ import { hasSupabaseConfig, supabase } from '../lib/supabaseClient'
 const ACCESS_TYPES = [
   { value: 'administrador', label: 'Administrador' },
   { value: 'secretaria', label: 'Secretaria' },
+  { value: 'reception', label: 'Recepção' },
+  { value: 'infantil_coordination', label: 'Coordenação Infantil' },
+  { value: 'fundamental_coordination', label: 'Coordenação Fundamental' },
+  { value: 'support', label: 'Suporte' },
   { value: 'cozinha', label: 'Cozinha' },
   { value: 'financeiro', label: 'Financeiro' },
   { value: 'professor', label: 'Professor' },
@@ -25,6 +29,10 @@ function accessTypeBadgeClass(value) {
   const map = {
     administrador: 'bg-violet-50 text-violet-700',
     secretaria: 'bg-sky-50 text-sky-700',
+    reception: 'bg-amber-50 text-amber-700',
+    infantil_coordination: 'bg-cyan-50 text-cyan-700',
+    fundamental_coordination: 'bg-teal-50 text-teal-700',
+    support: 'bg-slate-50 text-slate-700',
     cozinha: 'bg-orange-50 text-orange-700',
     financeiro: 'bg-emerald-50 text-emerald-700',
     professor: 'bg-indigo-50 text-indigo-700',
