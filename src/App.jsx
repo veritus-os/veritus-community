@@ -25,7 +25,6 @@ import StudentsPage from './pages/StudentsPage'
 // UsuariosPage removed — merged into FuncionariosPage
 import { useRole } from './core/auth/roleContext'
 import LoginPage from './pages/LoginPage'
-import DemoPage from './pages/DemoPage'
 import { EntityInfoProvider } from './components/EntityInfoDock'
 import AdminPage from './pages/AdminPage'
 import BugReporter from './components/BugReporter'
@@ -48,7 +47,7 @@ function HomeRedirect() {
     professor: '/pedagogico',
   }
 
-  if (isDemoMode) return <Navigate to="/demo" replace />
+  if (isDemoMode) return <Navigate to="/checkout-demo" replace />
   if (!isAuthenticated) return <Navigate to="/login" replace />
 
   return <Navigate to={homeByRole[role] ?? '/families'} replace />
@@ -63,7 +62,19 @@ function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/demo" element={<DemoPage />} />
+          <Route path="/demo" element={<Navigate to="/checkout-demo" replace />} />
+          <Route path="/student-checkout" element={<Navigate to="/checkout-demo" replace />} />
+          <Route
+            path="/checkout-demo"
+            element={
+              <ProtectedRoute
+                allowedRoles={['super_admin', 'admin', 'secretaria', 'professor', 'reception', 'infantil_coordination', 'fundamental_coordination', 'support']}
+                redirectTo="/home"
+              >
+                <StudentCheckoutPage />
+              </ProtectedRoute>
+            }
+          />
           <Route path="/home" element={<HomeRedirect />} />
 
         <Route

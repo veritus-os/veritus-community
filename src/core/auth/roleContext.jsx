@@ -154,7 +154,7 @@ export function RoleProvider({ children }) {
       isAuthenticated,
       loadingAuth,
       user,
-      enterDemo: (nextRole = 'admin') => {
+      enterDemo: (nextRole = 'support') => {
         setModeState('demo')
         setRoleState(normalizeRole(nextRole))
         setAuthBusy(false)

@@ -602,8 +602,8 @@ export default function StudentCheckoutPage() {
 
   return (
     <AppShell
-      title="Saída de Alunos"
-      subtitle="Monitor operacional de retirada, liberação e auditoria de saída com foco em segurança e uso rápido na portaria e em sala."
+      title="Sistema de Saída de Alunos"
+      subtitle="Recepção, coordenação e suporte em um fluxo operacional rápido, móvel e rastreável."
     >
       <ErrorBox message={error} />
 
@@ -617,7 +617,7 @@ export default function StudentCheckoutPage() {
 
       {isDemoMode ? (
         <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Modo demo não é adequado para piloto operacional. Use contas autenticadas para manter rastreabilidade por usuário.
+          Demo de saída de alunos ativa. Use apenas para o encontro de apresentação; para o piloto real, prefira contas autenticadas.
         </div>
       ) : null}
 

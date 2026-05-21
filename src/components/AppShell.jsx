@@ -23,6 +23,8 @@ import { ROLE_LABELS } from '../core/auth/permissions'
 import { useRole } from '../core/auth/roleContext'
 import { useFeatureFlags } from '../core/config/featureFlagsContext'
 
+const CHECKOUT_DEMO_ROLES = ['reception', 'infantil_coordination', 'fundamental_coordination', 'support']
+
 const navItems = [
   { to: '/admin', label: 'Painel Admin', icon: ShieldCheck, roles: ['super_admin'], moduleKey: null },
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['super_admin', 'admin', 'secretaria'], moduleKey: 'dashboard' },
@@ -129,18 +131,22 @@ export default function AppShell({ title, subtitle, children }) {
           {!desktopCollapsed ? (
             isDemoMode ? (
               <div className="mb-3 rounded-xl bg-white/10 p-2.5">
-                <p className="mb-1.5 text-[10px] uppercase tracking-[0.18em] text-sky-200/80">Perfil demo</p>
+                <p className="mb-1.5 text-[10px] uppercase tracking-[0.18em] text-sky-200/80">Demo de saída de alunos</p>
+                <p className="mb-2 text-[11px] text-sky-100/80">Troque apenas entre perfis operacionais do piloto.</p>
                 <select
                   className="w-full rounded-lg border border-white/20 bg-sky-950/40 px-2 py-1.5 text-sm text-white outline-none"
                   value={role}
                   onChange={(event) => setRole(event.target.value)}
                 >
-                  {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                  {CHECKOUT_DEMO_ROLES.map((value) => (
                     <option key={value} value={value}>
-                      {label}
+                      {ROLE_LABELS[value]}
                     </option>
                   ))}
                 </select>
+                <p className="mt-2 rounded-lg border border-amber-300/30 bg-amber-400/10 px-2 py-1 text-[11px] font-semibold text-amber-100">
+                  Somente módulo de saída de alunos.
+                </p>
               </div>
             ) : (
               <div className="mb-3 rounded-xl bg-white/10 p-2.5 text-xs text-sky-100">

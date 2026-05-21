@@ -29,8 +29,8 @@ export default function LoginPage() {
   }
 
   function handleDemo() {
-    enterDemo('admin')
-    navigate('/home', { replace: true })
+    enterDemo('support')
+    navigate('/checkout-demo', { replace: true })
   }
 
   return (
@@ -83,10 +83,10 @@ export default function LoginPage() {
               className="w-full rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-sm font-semibold text-sky-700 transition hover:bg-sky-100"
               onClick={handleDemo}
             >
-              Entrar em modo demonstração
+              Acessar demo de saída de alunos
             </button>
             <p className="mt-2 text-center text-xs text-slate-400">
-              O modo demo permite explorar o sistema sem login real.
+              Acesso apenas ao módulo de saída de alunos. Não abre o demo geral.
             </p>
           </div>
         </div>
