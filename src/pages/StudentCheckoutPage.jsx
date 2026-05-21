@@ -1,5 +1,5 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
-import AppShell from '../components/AppShell'
+import { memo, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
+import CheckoutShell from '../components/CheckoutShell'
 import { ErrorBox, LoadingRow } from '../components/UiState'
 import { useRole } from '../core/auth/roleContext'
 import {
@@ -16,6 +16,7 @@ const VIEW_OPTIONS = [
 ]
 
 const DEVICE_STORAGE_KEY = 'veritus_checkout_device_label'
+const LAYOUT_STORAGE_KEY = 'veritus_checkout_layout_mode'
 const RESET_ROLES = ['super_admin', 'admin', 'secretaria']
 const ACTIVE_WAITING_STATUSES = ['guardian_arrived', 'preparing_release', 'ready_for_pickup', 'released_from_classroom']
 const COORDINATION_STATUSES = ['guardian_arrived', 'preparing_release', 'ready_for_pickup', 'released_from_classroom', 'needs_verification']
@@ -28,6 +29,7 @@ const LOG_FILTERS = [
 const RECENT_CALL_LIMIT = 5
 const SYNC_STALE_MS = 30000
 const BOARD_REFRESH_MS = 20000
+const BOARD_REFRESH_COOLDOWN_MS = 1200
 const CHECKOUT_VIEWS_BY_ROLE = {
   super_admin: ['reception', 'classroom', 'support'],
   admin: ['reception', 'classroom', 'support'],
@@ -192,6 +194,11 @@ function canRunClassroomAction(row, actionKey) {
 export default function StudentCheckoutPage() {
   const { role, user, isDemoMode } = useRole()
   const [view, setView] = useState(() => getDefaultCheckoutView(role))
+  const [layoutMode, setLayoutMode] = useState(() => {
+    const stored = window.localStorage.getItem(LAYOUT_STORAGE_KEY)
+    if (stored === 'cards' || stored === 'list') return stored
+    return isDemoMode ? 'cards' : 'list'
+  })
   const [rows, setRows] = useState([])
   const [logs, setLogs] = useState([])
   const [campus, setCampus] = useState('todos')
@@ -204,7 +211,8 @@ export default function StudentCheckoutPage() {
   const [finalExitRow, setFinalExitRow] = useState(null)
   const [resetPending, setResetPending] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
   const [selectedStudentId, setSelectedStudentId] = useState(null)
   const [studentLogPeriod, setStudentLogPeriod] = useState('today')
   const [studentLogFrom, setStudentLogFrom] = useState('')
@@ -230,6 +238,9 @@ export default function StudentCheckoutPage() {
   const debounceTimerRef = useRef(null)
   const refreshTimerRef = useRef(null)
   const hasLoadedOnceRef = useRef(false)
+  const refreshInFlightRef = useRef(false)
+  const refreshQueuedRef = useRef(false)
+  const lastRefreshAtRef = useRef(0)
 
   const actorName = actorNameFromUser(user, role)
   const actorId = user?.id || null
@@ -243,6 +254,10 @@ export default function StudentCheckoutPage() {
   }, [deviceLabel])
 
   useEffect(() => {
+    window.localStorage.setItem(LAYOUT_STORAGE_KEY, layoutMode)
+  }, [layoutMode])
+
+  useEffect(() => {
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
     debounceTimerRef.current = setTimeout(() => setQuery(searchDraft), 140)
     return () => {
@@ -250,9 +265,28 @@ export default function StudentCheckoutPage() {
     }
   }, [searchDraft])
 
-  const loadData = useEffectEvent(async () => {
+  const loadData = useEffectEvent(async ({ showInitialLoader = false, force = false } = {}) => {
+    if (refreshInFlightRef.current) {
+      refreshQueuedRef.current = true
+      return
+    }
+
+    const shouldShowLoader = showInitialLoader || !hasLoadedOnceRef.current
+    const now = Date.now()
+    const isCooldownRefresh = !force && !shouldShowLoader && now - lastRefreshAtRef.current < BOARD_REFRESH_COOLDOWN_MS
+    if (isCooldownRefresh) return
+
+    refreshInFlightRef.current = true
+    refreshQueuedRef.current = false
+    lastRefreshAtRef.current = now
+
+    if (shouldShowLoader) {
+      setInitialLoading(true)
+    } else {
+      setSyncing(true)
+    }
+
     try {
-      setLoading(true)
       setError('')
       const [boardRows, auditRows] = await Promise.all([
         checkoutMonitorService.listBoard({ includeAbsent: true }),
@@ -294,14 +328,23 @@ export default function StudentCheckoutPage() {
       }
     } catch (err) {
       setError(err.message || 'Não foi possível carregar o monitor de saída.')
-      setConnectionNotice('Falha de sincronização. Atualizando novamente...')
+      setConnectionNotice('Falha de sincronização. Tentando novamente...')
     } finally {
-      setLoading(false)
+      refreshInFlightRef.current = false
+      if (shouldShowLoader) {
+        setInitialLoading(false)
+      } else {
+        setSyncing(false)
+      }
+      if (refreshQueuedRef.current) {
+        refreshQueuedRef.current = false
+        void loadData({ showInitialLoader: false, force: true })
+      }
     }
   })
 
   useEffect(() => {
-    void loadData()
+    void loadData({ showInitialLoader: true })
     const unsubscribe = checkoutMonitorService.subscribe(() => {
       void loadData()
     })
@@ -431,6 +474,8 @@ export default function StudentCheckoutPage() {
       campuses: campusSummary(rows),
     }
   }, [rows])
+
+  const useListLayout = layoutMode === 'list'
 
   function applyOptimisticStatus(row, nextStatus, { note = '', pickupGuardianId = null, pickupPersonName = '', authorizedByName = '' } = {}) {
     const timestamp = new Date().toISOString()
@@ -601,7 +646,7 @@ export default function StudentCheckoutPage() {
   }, [loadStudentLogs, selectedStudentId, studentLogPeriod, studentLogFrom, studentLogTo])
 
   return (
-    <AppShell
+    <CheckoutShell
       title="Sistema de Saída de Alunos"
       subtitle="Recepção, coordenação e suporte em um fluxo operacional rápido, móvel e rastreável."
     >
@@ -624,7 +669,7 @@ export default function StudentCheckoutPage() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
         <span className="font-semibold text-slate-900">Sync: {formatRelativeSync(lastSyncAt)}</span>
         <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-          {connectionNotice || (realtimeEnabled ? 'Realtime ativo' : 'Fallback local restrito')}
+          {connectionNotice || (syncing ? 'Sincronizando...' : (realtimeEnabled ? 'Realtime ativo' : 'Fallback local restrito'))}
         </span>
       </div>
 
@@ -710,7 +755,22 @@ export default function StudentCheckoutPage() {
             {item.label}
           </button>
         ))}
-        <button type="button" className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700" onClick={() => void loadData()}>
+        <span className="ml-0 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Visualização</span>
+        <button
+          type="button"
+          className={`rounded-full px-4 py-2 text-sm font-semibold ${layoutMode === 'list' ? 'bg-sky-700 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
+          onClick={() => setLayoutMode('list')}
+        >
+          Lista
+        </button>
+        <button
+          type="button"
+          className={`rounded-full px-4 py-2 text-sm font-semibold ${layoutMode === 'cards' ? 'bg-sky-700 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
+          onClick={() => setLayoutMode('cards')}
+        >
+          Cards
+        </button>
+        <button type="button" className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700" onClick={() => void loadData({ force: true })}>
           Atualizar agora
         </button>
         <button
@@ -751,116 +811,225 @@ export default function StudentCheckoutPage() {
         </section>
       ) : null}
 
-      {loading ? <LoadingRow text="Carregando monitor de saída..." /> : null}
+      {initialLoading ? <LoadingRow text="Carregando monitor de saída..." /> : null}
 
-      {!loading && view === 'reception' ? (
-        <div className="grid gap-4 xl:grid-cols-2">
-          {!receptionRows.length ? (
-            <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-6 text-sm text-slate-500 xl:col-span-2">
-              Nenhum aluno na fila com os filtros atuais.
-            </div>
-          ) : null}
-          {receptionRows.map((row) => (
-            <StudentCard
-              key={row.student_id}
-              row={row}
-              notesByStudent={notesByStudent}
-              setNotesByStudent={setNotesByStudent}
-              pickupGuardianByStudent={pickupGuardianByStudent}
-              setPickupGuardianByStudent={setPickupGuardianByStudent}
-              manualPickupByStudent={manualPickupByStudent}
-              setManualPickupByStudent={setManualPickupByStudent}
-              authorizedByByStudent={authorizedByByStudent}
-              setAuthorizedByByStudent={setAuthorizedByByStudent}
-              onOpenProfile={() => setSelectedStudentId(row.student_id)}
-              highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
-              readOnly={mutationsLocked || submitting}
-              actions={[
-                {
-                  label: 'Chamar aluno',
-                  onClick: () => runStatusAction(row, 'guardian_arrived'),
-                  tone: 'amber',
-                  hidden: !canRunReceptionAction(row, 'guardian_arrived'),
-                },
-                {
-                  label: 'Retirada excepcional',
-                  onClick: () => runStatusAction(row, 'needs_verification', { authorizedByName: authorizedByByStudent[row.student_id] || actorName }),
-                  tone: 'rose',
-                  hidden: !canRunReceptionAction(row, 'needs_verification'),
-                },
-                {
-                  label: 'Confirmar saída final',
-                  onClick: () => setFinalExitRow(row),
-                  tone: 'emerald',
-                  hidden: !canRunReceptionAction(row, 'left_school'),
-                },
-              ]}
-            />
-          ))}
-        </div>
+      {!initialLoading && view === 'reception' ? (
+        useListLayout ? (
+          <div className="space-y-3">
+            {!receptionRows.length ? (
+              <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-6 text-sm text-slate-500">
+                Nenhum aluno na fila com os filtros atuais.
+              </div>
+            ) : null}
+            {receptionRows.map((row) => (
+              <CheckoutQueueRow
+                key={row.student_id}
+                row={row}
+                mode="reception"
+                notesByStudent={notesByStudent}
+                setNotesByStudent={setNotesByStudent}
+                pickupGuardianByStudent={pickupGuardianByStudent}
+                setPickupGuardianByStudent={setPickupGuardianByStudent}
+                manualPickupByStudent={manualPickupByStudent}
+                setManualPickupByStudent={setManualPickupByStudent}
+                authorizedByByStudent={authorizedByByStudent}
+                setAuthorizedByByStudent={setAuthorizedByByStudent}
+                onOpenProfile={() => setSelectedStudentId(row.student_id)}
+                highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
+                readOnly={mutationsLocked || submitting}
+                actions={[
+                  {
+                    label: 'Chamar aluno',
+                    onClick: () => runStatusAction(row, 'guardian_arrived'),
+                    tone: 'amber',
+                    hidden: !canRunReceptionAction(row, 'guardian_arrived'),
+                  },
+                  {
+                    label: 'Retirada excepcional',
+                    onClick: () => runStatusAction(row, 'needs_verification', { authorizedByName: authorizedByByStudent[row.student_id] || actorName }),
+                    tone: 'rose',
+                    hidden: !canRunReceptionAction(row, 'needs_verification'),
+                  },
+                  {
+                    label: 'Confirmar saída final',
+                    onClick: () => setFinalExitRow(row),
+                    tone: 'emerald',
+                    hidden: !canRunReceptionAction(row, 'left_school'),
+                  },
+                ]}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="grid gap-4 xl:grid-cols-2">
+            {!receptionRows.length ? (
+              <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-6 text-sm text-slate-500 xl:col-span-2">
+                Nenhum aluno na fila com os filtros atuais.
+              </div>
+            ) : null}
+            {receptionRows.map((row) => (
+              <StudentCard
+                key={row.student_id}
+                row={row}
+                notesByStudent={notesByStudent}
+                setNotesByStudent={setNotesByStudent}
+                pickupGuardianByStudent={pickupGuardianByStudent}
+                setPickupGuardianByStudent={setPickupGuardianByStudent}
+                manualPickupByStudent={manualPickupByStudent}
+                setManualPickupByStudent={setManualPickupByStudent}
+                authorizedByByStudent={authorizedByByStudent}
+                setAuthorizedByByStudent={setAuthorizedByByStudent}
+                onOpenProfile={() => setSelectedStudentId(row.student_id)}
+                highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
+                readOnly={mutationsLocked || submitting}
+                actions={[
+                  {
+                    label: 'Chamar aluno',
+                    onClick: () => runStatusAction(row, 'guardian_arrived'),
+                    tone: 'amber',
+                    hidden: !canRunReceptionAction(row, 'guardian_arrived'),
+                  },
+                  {
+                    label: 'Retirada excepcional',
+                    onClick: () => runStatusAction(row, 'needs_verification', { authorizedByName: authorizedByByStudent[row.student_id] || actorName }),
+                    tone: 'rose',
+                    hidden: !canRunReceptionAction(row, 'needs_verification'),
+                  },
+                  {
+                    label: 'Confirmar saída final',
+                    onClick: () => setFinalExitRow(row),
+                    tone: 'emerald',
+                    hidden: !canRunReceptionAction(row, 'left_school'),
+                  },
+                ]}
+              />
+            ))}
+          </div>
+        )
       ) : null}
 
-      {!loading && view === 'classroom' ? (
-        <div className="grid gap-4 xl:grid-cols-2">
-          {!classroomRows.length ? (
-            <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-6 text-sm text-slate-500 xl:col-span-2">
-              Nenhum aluno pendente para a equipe com os filtros atuais.
-            </div>
-          ) : null}
-          {classroomRows.map((row) => (
-            <StudentCard
-              key={row.student_id}
-              row={row}
-              notesByStudent={notesByStudent}
-              setNotesByStudent={setNotesByStudent}
-              pickupGuardianByStudent={pickupGuardianByStudent}
-              setPickupGuardianByStudent={setPickupGuardianByStudent}
-              manualPickupByStudent={manualPickupByStudent}
-              setManualPickupByStudent={setManualPickupByStudent}
-              authorizedByByStudent={authorizedByByStudent}
-              setAuthorizedByByStudent={setAuthorizedByByStudent}
-              onOpenProfile={() => setSelectedStudentId(row.student_id)}
-              highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
-              compactReceptionFields
-              readOnly={mutationsLocked || submitting}
-              actions={[
-                {
-                  label: 'Preparar liberação',
-                  onClick: () => runStatusAction(row, 'preparing_release'),
-                  tone: 'sky',
-                  hidden: !canRunClassroomAction(row, 'preparing_release'),
-                },
-                {
-                  label: 'Pronto para retirada',
-                  onClick: () => runStatusAction(row, 'ready_for_pickup'),
-                  tone: 'cyan',
-                  hidden: !canRunClassroomAction(row, 'ready_for_pickup'),
-                },
-                {
-                  label: 'Liberado da sala',
-                  onClick: () => runStatusAction(row, 'released_from_classroom'),
-                  tone: 'violet',
-                  hidden: !canRunClassroomAction(row, 'released_from_classroom'),
-                },
-                {
-                  label: 'Necessita verificação',
-                  onClick: () => runStatusAction(row, 'needs_verification'),
-                  tone: 'rose',
-                  hidden: !canRunClassroomAction(row, 'needs_verification'),
-                },
-                {
-                  label: 'Ver perfil',
-                  onClick: () => setSelectedStudentId(row.student_id),
-                  tone: 'slate',
-                  hidden: false,
-                },
-              ]}
-            />
-          ))}
-        </div>
+      {!initialLoading && view === 'classroom' ? (
+        useListLayout ? (
+          <div className="space-y-3">
+            {!classroomRows.length ? (
+              <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-6 text-sm text-slate-500">
+                Nenhum aluno pendente para a equipe com os filtros atuais.
+              </div>
+            ) : null}
+            {classroomRows.map((row) => (
+              <CheckoutQueueRow
+                key={row.student_id}
+                row={row}
+                mode="classroom"
+                notesByStudent={notesByStudent}
+                setNotesByStudent={setNotesByStudent}
+                pickupGuardianByStudent={pickupGuardianByStudent}
+                setPickupGuardianByStudent={setPickupGuardianByStudent}
+                manualPickupByStudent={manualPickupByStudent}
+                setManualPickupByStudent={setManualPickupByStudent}
+                authorizedByByStudent={authorizedByByStudent}
+                setAuthorizedByByStudent={setAuthorizedByByStudent}
+                onOpenProfile={() => setSelectedStudentId(row.student_id)}
+                highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
+                compactReceptionFields
+                readOnly={mutationsLocked || submitting}
+                actions={[
+                  {
+                    label: 'Preparar liberação',
+                    onClick: () => runStatusAction(row, 'preparing_release'),
+                    tone: 'sky',
+                    hidden: !canRunClassroomAction(row, 'preparing_release'),
+                  },
+                  {
+                    label: 'Pronto para retirada',
+                    onClick: () => runStatusAction(row, 'ready_for_pickup'),
+                    tone: 'cyan',
+                    hidden: !canRunClassroomAction(row, 'ready_for_pickup'),
+                  },
+                  {
+                    label: 'Liberado da sala',
+                    onClick: () => runStatusAction(row, 'released_from_classroom'),
+                    tone: 'violet',
+                    hidden: !canRunClassroomAction(row, 'released_from_classroom'),
+                  },
+                  {
+                    label: 'Necessita verificação',
+                    onClick: () => runStatusAction(row, 'needs_verification'),
+                    tone: 'rose',
+                    hidden: !canRunClassroomAction(row, 'needs_verification'),
+                  },
+                  {
+                    label: 'Ver perfil',
+                    onClick: () => setSelectedStudentId(row.student_id),
+                    tone: 'slate',
+                    hidden: false,
+                  },
+                ]}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="grid gap-4 xl:grid-cols-2">
+            {!classroomRows.length ? (
+              <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-6 text-sm text-slate-500 xl:col-span-2">
+                Nenhum aluno pendente para a equipe com os filtros atuais.
+              </div>
+            ) : null}
+            {classroomRows.map((row) => (
+              <StudentCard
+                key={row.student_id}
+                row={row}
+                notesByStudent={notesByStudent}
+                setNotesByStudent={setNotesByStudent}
+                pickupGuardianByStudent={pickupGuardianByStudent}
+                setPickupGuardianByStudent={setPickupGuardianByStudent}
+                manualPickupByStudent={manualPickupByStudent}
+                setManualPickupByStudent={setManualPickupByStudent}
+                authorizedByByStudent={authorizedByByStudent}
+                setAuthorizedByByStudent={setAuthorizedByByStudent}
+                onOpenProfile={() => setSelectedStudentId(row.student_id)}
+                highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
+                compactReceptionFields
+                readOnly={mutationsLocked || submitting}
+                actions={[
+                  {
+                    label: 'Preparar liberação',
+                    onClick: () => runStatusAction(row, 'preparing_release'),
+                    tone: 'sky',
+                    hidden: !canRunClassroomAction(row, 'preparing_release'),
+                  },
+                  {
+                    label: 'Pronto para retirada',
+                    onClick: () => runStatusAction(row, 'ready_for_pickup'),
+                    tone: 'cyan',
+                    hidden: !canRunClassroomAction(row, 'ready_for_pickup'),
+                  },
+                  {
+                    label: 'Liberado da sala',
+                    onClick: () => runStatusAction(row, 'released_from_classroom'),
+                    tone: 'violet',
+                    hidden: !canRunClassroomAction(row, 'released_from_classroom'),
+                  },
+                  {
+                    label: 'Necessita verificação',
+                    onClick: () => runStatusAction(row, 'needs_verification'),
+                    tone: 'rose',
+                    hidden: !canRunClassroomAction(row, 'needs_verification'),
+                  },
+                  {
+                    label: 'Ver perfil',
+                    onClick: () => setSelectedStudentId(row.student_id),
+                    tone: 'slate',
+                    hidden: false,
+                  },
+                ]}
+              />
+            ))}
+          </div>
+        )
       ) : null}
 
-      {!loading && view === 'support' ? (
+      {!initialLoading && view === 'support' ? (
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
           <div className="border-b border-slate-100 px-4 py-3">
             <h3 className="text-sm font-semibold text-slate-900">Logs operacionais recentes</h3>
@@ -1004,7 +1173,7 @@ export default function StudentCheckoutPage() {
           Todos os alunos visíveis voltarão para <strong>Na escola</strong>. Alunos ausentes serão preservados.
         </p>
       </ConfirmationDialog>
-    </AppShell>
+    </CheckoutShell>
   )
 }
 
@@ -1144,7 +1313,7 @@ function StudentProfilePanel({
   )
 }
 
-function StudentCard({
+const StudentCard = memo(function StudentCard({
   row,
   actions,
   notesByStudent,
@@ -1313,6 +1482,227 @@ function StudentCard({
         </div>
       </dl>
     </article>
+  )
+}, areQueueRowPropsEqual)
+
+const CheckoutQueueRow = memo(function CheckoutQueueRow({
+  row,
+  mode,
+  actions,
+  notesByStudent,
+  setNotesByStudent,
+  pickupGuardianByStudent,
+  setPickupGuardianByStudent,
+  manualPickupByStudent,
+  setManualPickupByStudent,
+  authorizedByByStudent,
+  setAuthorizedByByStudent,
+  onOpenProfile,
+  highlight = false,
+  compactReceptionFields = false,
+  readOnly = false,
+}) {
+  const visibleActions = actions.filter((action) => !action.hidden)
+  const pickupDisplayName = row.pickup_guardian_name || row.pickup_person_name || ''
+
+  return (
+    <article className={`rounded-2xl border bg-white p-3 shadow-sm transition-all duration-200 ${highlight ? 'border-amber-300 bg-amber-50/50 ring-2 ring-amber-200' : 'border-slate-200'}`}>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="break-words text-base font-extrabold text-slate-900 sm:text-lg">{row.full_name}</p>
+            <p className="break-words text-sm text-slate-500">{row.class_name} • {row.campus}</p>
+            <p className="break-words text-sm text-slate-500">{row.family_name}</p>
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getCheckoutStatusClass(row.status)}`}>
+              {getCheckoutStatusLabel(row.status)}
+            </span>
+            {row.status === 'needs_verification' ? (
+              <span className="rounded-full bg-rose-100 px-3 py-1 text-[11px] font-semibold text-rose-800">
+                Pendência operacional
+              </span>
+            ) : highlight ? (
+              <span className="rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800">
+                Novo na fila
+              </span>
+            ) : null}
+            {onOpenProfile ? (
+              <button
+                type="button"
+                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
+                onClick={onOpenProfile}
+              >
+                Ver perfil
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        {row.activities.length ? (
+          <div className="flex flex-wrap gap-2">
+            {row.activities.map((item) => (
+              <span key={item} className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">{item}</span>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="grid gap-2 md:grid-cols-2">
+          <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Responsáveis autorizados</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {row.authorized_guardians.length ? row.authorized_guardians.map((item) => (
+                <span key={item.id} className="max-w-full break-words rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                  {item.full_name}
+                </span>
+              )) : <span className="text-xs text-rose-700">Nenhuma pessoa autorizada cadastrada.</span>}
+            </div>
+          </div>
+
+          <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status operacional</p>
+            {pickupDisplayName ? (
+              <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+                Retirada em andamento por <strong>{pickupDisplayName}</strong>
+              </p>
+            ) : null}
+            {row.verification_note ? (
+              <p className="mt-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-rose-900">
+                Verificação pendente: {row.verification_note}
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="grid gap-2 lg:grid-cols-3">
+          {mode === 'reception' && !compactReceptionFields ? (
+            <>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Responsável identificado</label>
+                <select
+                  disabled={readOnly}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
+                  value={pickupGuardianByStudent[row.student_id] || ''}
+                  onChange={(event) => setPickupGuardianByStudent((current) => ({ ...current, [row.student_id]: event.target.value }))}
+                >
+                  <option value="">Selecione responsável autorizado</option>
+                  {row.authorized_guardians.map((item) => (
+                    <option key={item.id} value={item.id}>{item.full_name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Ou informe outro nome</label>
+                <input
+                  disabled={readOnly}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
+                  placeholder="Usar quando não estiver na lista"
+                  value={manualPickupByStudent[row.student_id] || ''}
+                  onChange={(event) => setManualPickupByStudent((current) => ({ ...current, [row.student_id]: event.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Autorizado por</label>
+                <input
+                  disabled={readOnly}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
+                  placeholder="Operador / coordenação"
+                  value={authorizedByByStudent[row.student_id] || ''}
+                  onChange={(event) => setAuthorizedByByStudent((current) => ({ ...current, [row.student_id]: event.target.value }))}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="lg:col-span-3">
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Observação operacional</label>
+              <textarea
+                rows={2}
+                disabled={readOnly}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
+                placeholder="Obrigatório quando houver verificação manual"
+                value={notesByStudent[row.student_id] || ''}
+                onChange={(event) => setNotesByStudent((current) => ({ ...current, [row.student_id]: event.target.value }))}
+              />
+            </div>
+          )}
+        </div>
+
+        {mode === 'reception' && !compactReceptionFields ? (
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Observação operacional</label>
+            <textarea
+              rows={2}
+              disabled={readOnly}
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
+              placeholder="Obrigatório quando houver verificação manual"
+              value={notesByStudent[row.student_id] || ''}
+              onChange={(event) => setNotesByStudent((current) => ({ ...current, [row.student_id]: event.target.value }))}
+            />
+          </div>
+        ) : null}
+
+        {visibleActions.length ? (
+          <div className="flex flex-wrap gap-2">
+            {visibleActions.map((action) => (
+              <button
+                key={action.label}
+                type="button"
+                disabled={readOnly}
+                className={`rounded-2xl px-3 py-3 text-sm font-extrabold ${readOnly ? 'cursor-not-allowed bg-slate-100 text-slate-400' : buttonTone(action.tone)} ${action.fullWidth ? 'flex-1' : ''}`}
+                onClick={action.onClick}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          className="self-start rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
+          onClick={onOpenProfile}
+        >
+          Ver detalhes
+        </button>
+      </div>
+    </article>
+  )
+}, areQueueRowPropsEqual)
+
+function areQueueRowPropsEqual(prev, next) {
+  if (prev.row.student_id !== next.row.student_id) return false
+  if (prev.highlight !== next.highlight) return false
+  if (prev.readOnly !== next.readOnly) return false
+  if (prev.mode !== next.mode) return false
+  if (prev.compactReceptionFields !== next.compactReceptionFields) return false
+  if ((prev.notesByStudent?.[prev.row.student_id] || '') !== (next.notesByStudent?.[next.row.student_id] || '')) return false
+  if ((prev.pickupGuardianByStudent?.[prev.row.student_id] || '') !== (next.pickupGuardianByStudent?.[next.row.student_id] || '')) return false
+  if ((prev.manualPickupByStudent?.[prev.row.student_id] || '') !== (next.manualPickupByStudent?.[next.row.student_id] || '')) return false
+  if ((prev.authorizedByByStudent?.[prev.row.student_id] || '') !== (next.authorizedByByStudent?.[next.row.student_id] || '')) return false
+
+  const left = prev.row
+  const right = next.row
+  return (
+    left.status === right.status &&
+    left.updated_at === right.updated_at &&
+    left.guardian_arrived_at === right.guardian_arrived_at &&
+    left.guardian_arrived_by_name === right.guardian_arrived_by_name &&
+    left.ready_for_pickup_at === right.ready_for_pickup_at &&
+    left.ready_for_pickup_by_name === right.ready_for_pickup_by_name &&
+    left.released_from_classroom_at === right.released_from_classroom_at &&
+    left.released_from_classroom_by_name === right.released_from_classroom_by_name &&
+    left.left_school_at === right.left_school_at &&
+    left.left_school_by_name === right.left_school_by_name &&
+    left.pickup_person_name === right.pickup_person_name &&
+    left.pickup_guardian_name === right.pickup_guardian_name &&
+    left.verification_note === right.verification_note &&
+    left.note === right.note &&
+    left.full_name === right.full_name &&
+    left.class_name === right.class_name &&
+    left.campus === right.campus &&
+    left.family_name === right.family_name &&
+    left.activities.join('|') === right.activities.join('|') &&
+    left.authorized_guardians.map((item) => item.full_name).join('|') === right.authorized_guardians.map((item) => item.full_name).join('|')
   )
 }
 
