@@ -1,4 +1,5 @@
 import { memo, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
+import { RefreshCw, Search } from 'lucide-react'
 import CheckoutShell from '../components/CheckoutShell'
 import { ErrorBox, LoadingRow } from '../components/UiState'
 import { useRole } from '../core/auth/roleContext'
@@ -30,6 +31,14 @@ const RECENT_CALL_LIMIT = 5
 const SYNC_STALE_MS = 30000
 const BOARD_REFRESH_MS = 20000
 const BOARD_REFRESH_COOLDOWN_MS = 1200
+const TURN_FILTER_OPTIONS = [
+  { key: 'todos', label: 'Todos os turnos' },
+  { key: 'manha', label: 'Manhã' },
+  { key: 'tarde', label: 'Tarde' },
+  { key: 'integral', label: 'Integral' },
+  { key: 'extracurricular', label: 'Extracurricular' },
+  { key: 'noite', label: 'Noite' },
+]
 const CHECKOUT_VIEWS_BY_ROLE = {
   super_admin: ['reception', 'classroom', 'support'],
   admin: ['reception', 'classroom', 'support'],
@@ -53,6 +62,28 @@ function getVisibleCheckoutViews(role) {
 
 function actorNameFromUser(user, role) {
   return user?.full_name || user?.email || role || 'Operador'
+}
+
+function normalizeTurnoKey(value = '') {
+  const text = String(value || '').trim().toLowerCase()
+  if (!text) return 'sem-turno'
+  if (text.includes('manh')) return 'manha'
+  if (text.includes('tard')) return 'tarde'
+  if (text.includes('integral')) return 'integral'
+  if (text.includes('extra') || text.includes('contraturno') || text.includes('plantão')) return 'extracurricular'
+  if (text.includes('noite')) return 'noite'
+  return text.replace(/\s+/g, '-')
+}
+
+function normalizeTurnoLabel(value = '') {
+  const text = String(value || '').trim()
+  const key = normalizeTurnoKey(text)
+  if (key === 'manha') return 'Manhã'
+  if (key === 'tarde') return 'Tarde'
+  if (key === 'integral') return 'Integral'
+  if (key === 'extracurricular') return 'Extracurricular'
+  if (key === 'noite') return 'Noite'
+  return text || 'Sem turno'
 }
 
 function sortLogsByTime(rows) {
@@ -144,6 +175,12 @@ function campusSummary(rows) {
   }))
 }
 
+function getCheckoutShellTitle(view, role) {
+  if (view === 'support' || role === 'support') return 'Sistema de Saída • Suporte'
+  if (view === 'classroom' || role === 'infantil_coordination' || role === 'fundamental_coordination') return 'Sistema de Saída • Coordenação'
+  return 'Sistema de Saída • Recepção'
+}
+
 function sortByPriority(rows) {
   const priority = {
     needs_verification: 0,
@@ -202,6 +239,8 @@ export default function StudentCheckoutPage() {
   const [rows, setRows] = useState([])
   const [logs, setLogs] = useState([])
   const [campus, setCampus] = useState('todos')
+  const [turno, setTurno] = useState('todos')
+  const [classFilter, setClassFilter] = useState('all')
   const [searchDraft, setSearchDraft] = useState('')
   const [query, setQuery] = useState('')
   const [deviceLabel, setDeviceLabel] = useState(() => window.localStorage.getItem(DEVICE_STORAGE_KEY) || '')
@@ -222,6 +261,7 @@ export default function StudentCheckoutPage() {
   const [studentLogsHasMore, setStudentLogsHasMore] = useState(false)
   const [studentLogsOffset, setStudentLogsOffset] = useState(0)
   const [studentLogsError, setStudentLogsError] = useState('')
+  const [guardianPickerRow, setGuardianPickerRow] = useState(null)
   const [supportLogPeriod, setSupportLogPeriod] = useState('today')
   const [supportLogFrom, setSupportLogFrom] = useState('')
   const [supportLogTo, setSupportLogTo] = useState('')
@@ -241,6 +281,7 @@ export default function StudentCheckoutPage() {
   const refreshInFlightRef = useRef(false)
   const refreshQueuedRef = useRef(false)
   const lastRefreshAtRef = useRef(0)
+  const studentLogsLoadedKeyRef = useRef('')
 
   const actorName = actorNameFromUser(user, role)
   const actorId = user?.id || null
@@ -428,23 +469,95 @@ export default function StudentCheckoutPage() {
     })
   }
 
+  function handleQuickReceptionCall(row) {
+    const guardians = row.authorized_guardians || []
+    const selectedGuardianId = Number(pickupGuardianByStudent[row.student_id] || 0)
+    const selectedGuardian = selectedGuardianId
+      ? guardians.find((item) => Number(item.id) === selectedGuardianId) || null
+      : null
+
+    if (selectedGuardian) {
+      void runStatusAction(row, 'guardian_arrived', {
+        pickupGuardianId: selectedGuardian.id,
+        pickupPersonName: selectedGuardian.full_name,
+        authorizedByName: authorizedByByStudent[row.student_id] || actorName,
+      })
+      return
+    }
+    if (guardians.length === 1) {
+      const guardian = guardians[0]
+      void runStatusAction(row, 'guardian_arrived', {
+        pickupGuardianId: guardian.id,
+        pickupPersonName: guardian.full_name,
+        authorizedByName: authorizedByByStudent[row.student_id] || actorName,
+      })
+      return
+    }
+    if (guardians.length > 1) {
+      setGuardianPickerRow(row)
+      return
+    }
+    openStudentDetails(row.student_id)
+  }
+
   const filteredRows = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
     return sortByPriority(
       rows.filter((row) => {
         const matchesCampus = campus === 'todos' || row.campus === campus
+        const matchesTurno = turno === 'todos' || normalizeTurnoKey(row.shift_name) === turno
+        const matchesClass = classFilter === 'all' || row.class_name === classFilter
         const matchesQuery =
           !normalizedQuery ||
           row.full_name.toLowerCase().includes(normalizedQuery) ||
           row.class_name.toLowerCase().includes(normalizedQuery) ||
+          String(row.shift_name || '').toLowerCase().includes(normalizedQuery) ||
           row.family_name.toLowerCase().includes(normalizedQuery) ||
+          String(row.pickup_person_name || '').toLowerCase().includes(normalizedQuery) ||
           row.authorized_guardians.some((item) => item.full_name.toLowerCase().includes(normalizedQuery))
-        return matchesCampus && matchesQuery
+        return matchesCampus && matchesTurno && matchesClass && matchesQuery
       }),
     )
-  }, [campus, query, rows])
+  }, [campus, classFilter, query, rows, turno])
 
-  const receptionRows = useMemo(() => filteredRows.filter((row) => row.status !== 'absent'), [filteredRows])
+  const turnoOptions = useMemo(() => {
+    const found = new Map()
+    for (const row of rows) {
+      const label = normalizeTurnoLabel(row.shift_name)
+      const key = normalizeTurnoKey(label)
+      if (key === 'sem-turno') continue
+      if (!found.has(key)) found.set(key, label)
+    }
+
+    const preferred = TURN_FILTER_OPTIONS
+      .filter((item) => item.key !== 'todos' && found.has(item.key))
+      .map((item) => ({ value: item.key, label: item.label }))
+    const extras = [...found.entries()]
+      .filter(([key]) => !TURN_FILTER_OPTIONS.some((item) => item.key === key))
+      .sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'))
+      .map(([value, label]) => ({ value, label }))
+    return [{ value: 'todos', label: 'Todos os turnos' }, ...preferred, ...extras]
+  }, [rows])
+
+  const classOptions = useMemo(() => {
+    const sourceRows = turno === 'todos'
+      ? rows
+      : rows.filter((row) => normalizeTurnoKey(row.shift_name) === turno)
+    const classNames = [...new Set(sourceRows.map((row) => row.class_name).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+    return ['all', ...classNames].map((item) => ({
+      value: item,
+      label: item === 'all' ? 'Todas as turmas' : item,
+    }))
+  }, [rows, turno])
+
+  useEffect(() => {
+    if (classFilter === 'all') return
+    if (!classOptions.some((item) => item.value === classFilter)) {
+      setClassFilter('all')
+    }
+  }, [classFilter, classOptions])
+
+  const receptionRows = useMemo(() => filteredRows.filter((row) => row.status !== 'absent' && row.status !== 'left_school'), [filteredRows])
 
   const classroomRows = useMemo(
     () => filteredRows.filter((row) => COORDINATION_STATUSES.includes(row.status)),
@@ -476,6 +589,11 @@ export default function StudentCheckoutPage() {
   }, [rows])
 
   const useListLayout = layoutMode === 'list'
+
+  function openStudentDetails(studentId) {
+    setSelectedStudentId(studentId)
+    studentLogsLoadedKeyRef.current = ''
+  }
 
   function applyOptimisticStatus(row, nextStatus, { note = '', pickupGuardianId = null, pickupPersonName = '', authorizedByName = '' } = {}) {
     const timestamp = new Date().toISOString()
@@ -534,14 +652,14 @@ export default function StudentCheckoutPage() {
     )
   }
 
-  async function runStatusAction(row, nextStatus, { confirmed = false, authorizedByName = '' } = {}) {
+  async function runStatusAction(row, nextStatus, { confirmed = false, authorizedByName = '', pickupGuardianId = null, pickupPersonName = '', note = '' } = {}) {
     try {
       setSubmitting(true)
       setError('')
       applyOptimisticStatus(row, nextStatus, {
-        note: notesByStudent[row.student_id] || '',
-        pickupGuardianId: pickupGuardianByStudent[row.student_id] || null,
-        pickupPersonName: manualPickupByStudent[row.student_id] || '',
+        note: note || notesByStudent[row.student_id] || '',
+        pickupGuardianId: (pickupGuardianId ?? pickupGuardianByStudent[row.student_id]) || null,
+        pickupPersonName: pickupPersonName || manualPickupByStudent[row.student_id] || '',
         authorizedByName: authorizedByName || authorizedByByStudent[row.student_id] || actorName,
       })
       await checkoutMonitorService.transitionStatus({
@@ -550,11 +668,11 @@ export default function StudentCheckoutPage() {
         actorName,
         actorId,
         actorRole: role,
-        note: notesByStudent[row.student_id] || '',
+        note: note || notesByStudent[row.student_id] || '',
         campus: row.campus,
         deviceLabel,
-        pickupGuardianId: pickupGuardianByStudent[row.student_id] || null,
-        pickupPersonName: manualPickupByStudent[row.student_id] || '',
+        pickupGuardianId: (pickupGuardianId ?? pickupGuardianByStudent[row.student_id]) || null,
+        pickupPersonName: pickupPersonName || manualPickupByStudent[row.student_id] || '',
         authorizedByName: authorizedByName || authorizedByByStudent[row.student_id] || actorName,
         confirmed,
       })
@@ -607,8 +725,8 @@ export default function StudentCheckoutPage() {
     }
   }
 
-  const loadStudentLogs = useEffectEvent(async ({ reset = false } = {}) => {
-    if (!selectedStudentId) {
+  const loadStudentLogs = useEffectEvent(async ({ reset = false, studentId = selectedStudentId, period = studentLogPeriod, from = studentLogFrom, to = studentLogTo, force = false } = {}) => {
+    if (!studentId) {
       setStudentLogs([])
       setStudentLogsHasMore(false)
       setStudentLogsOffset(0)
@@ -616,6 +734,10 @@ export default function StudentCheckoutPage() {
     }
 
     try {
+      const requestKey = `${studentId}|${period}|${from}|${to}`
+      if (!force && !reset && studentLogsLoadedKeyRef.current === requestKey && studentLogs.length > 0) {
+        return
+      }
       setStudentLogsLoading(true)
       setStudentLogsError('')
       const nextOffset = reset ? 0 : studentLogsOffset
@@ -624,16 +746,17 @@ export default function StudentCheckoutPage() {
         setStudentLogsOffset(0)
       }
       const result = await checkoutMonitorService.listStudentLogs({
-        studentId: selectedStudentId,
-        period: studentLogPeriod,
-        from: studentLogFrom,
-        to: studentLogTo,
+        studentId,
+        period,
+        from,
+        to,
         offset: nextOffset,
         limit: 20,
       })
       setStudentLogs((current) => (reset ? result.rows : [...current, ...result.rows]))
       setStudentLogsHasMore(Boolean(result.hasMore))
       setStudentLogsOffset(nextOffset + result.rows.length)
+      studentLogsLoadedKeyRef.current = requestKey
     } catch (err) {
       setStudentLogsError(err.message || 'Não foi possível carregar o histórico do aluno.')
     } finally {
@@ -642,13 +765,78 @@ export default function StudentCheckoutPage() {
   })
 
   useEffect(() => {
-    void loadStudentLogs({ reset: true })
-  }, [loadStudentLogs, selectedStudentId, studentLogPeriod, studentLogFrom, studentLogTo])
+    if (!selectedStudentId) return
+    const requestKey = `${selectedStudentId}|${studentLogPeriod}|${studentLogFrom}|${studentLogTo}`
+    if (studentLogsLoadedKeyRef.current === requestKey && studentLogs.length > 0) return
+    void loadStudentLogs({ reset: true, studentId: selectedStudentId, period: studentLogPeriod, from: studentLogFrom, to: studentLogTo, force: true })
+  }, [loadStudentLogs, selectedStudentId, studentLogFrom, studentLogPeriod, studentLogTo, studentLogs.length])
+
+  const selectedStudentActions = useMemo(() => {
+    if (!selectedStudent) return []
+
+    const actions = []
+    const allowReception = view === 'reception' || role === 'support'
+    const allowClassroom = view === 'classroom' || role === 'support'
+
+    if (allowReception && canRunReceptionAction(selectedStudent, 'guardian_arrived')) {
+      actions.push({
+        label: 'Chamar',
+        tone: 'amber',
+        onClick: () => handleQuickReceptionCall(selectedStudent),
+      })
+    }
+    if ((allowReception || allowClassroom) && canRunReceptionAction(selectedStudent, 'needs_verification')) {
+      actions.push({
+        label: 'Retirada excepcional',
+        tone: 'rose',
+        onClick: () => void runStatusAction(selectedStudent, 'needs_verification'),
+      })
+    }
+    if (allowClassroom && canRunClassroomAction(selectedStudent, 'preparing_release')) {
+      actions.push({
+        label: 'Preparar liberação',
+        tone: 'sky',
+        onClick: () => void runStatusAction(selectedStudent, 'preparing_release'),
+      })
+    }
+    if (allowClassroom && canRunClassroomAction(selectedStudent, 'ready_for_pickup')) {
+      actions.push({
+        label: 'Pronto para retirada',
+        tone: 'cyan',
+        onClick: () => void runStatusAction(selectedStudent, 'ready_for_pickup'),
+      })
+    }
+    if (allowClassroom && canRunClassroomAction(selectedStudent, 'released_from_classroom')) {
+      actions.push({
+        label: 'Liberar da sala',
+        tone: 'violet',
+        onClick: () => void runStatusAction(selectedStudent, 'released_from_classroom'),
+      })
+    }
+    if (allowReception && canRunReceptionAction(selectedStudent, 'left_school')) {
+      actions.push({
+        label: 'Confirmar saída final',
+        tone: 'emerald',
+        onClick: () => setFinalExitRow(selectedStudent),
+      })
+    }
+    return actions
+  }, [handleQuickReceptionCall, role, runStatusAction, selectedStudent, setFinalExitRow, view])
+
+  const syncStatusLabel = connectionNotice
+    ? 'Offline'
+    : syncing
+      ? 'Sincronizando…'
+      : lastSyncAt && Date.now() - lastSyncAt < SYNC_STALE_MS
+        ? 'Atualizado agora'
+        : 'Online'
+  const syncStatusTone = connectionNotice ? 'rose' : syncing ? 'amber' : 'emerald'
 
   return (
     <CheckoutShell
-      title="Sistema de Saída de Alunos"
-      subtitle="Recepção, coordenação e suporte em um fluxo operacional rápido, móvel e rastreável."
+      title={getCheckoutShellTitle(view, role)}
+      statusLabel={syncStatusLabel}
+      statusTone={syncStatusTone}
     >
       <ErrorBox message={error} />
 
@@ -666,131 +854,116 @@ export default function StudentCheckoutPage() {
         </div>
       ) : null}
 
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-        <span className="font-semibold text-slate-900">Sync: {formatRelativeSync(lastSyncAt)}</span>
-        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-          {connectionNotice || (syncing ? 'Sincronizando...' : (realtimeEnabled ? 'Realtime ativo' : 'Fallback local restrito'))}
-        </span>
-      </div>
-
       {!realtimeEnabled ? (
         <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Realtime indisponível neste modo. A sincronização automática entre dispositivos depende do Supabase configurado; o fallback local fica restrito a desenvolvimento explícito.
         </div>
       ) : null}
 
-      <section className="mb-4 grid gap-3 md:grid-cols-4">
-        <SummaryCard label="Na escola" value={summary.totalAtSchool} tone="slate" />
-        <SummaryCard label="Aguardando retirada" value={summary.totalWaiting} tone="amber" />
-        <SummaryCard label="Necessita verificação" value={summary.totalVerification} tone="rose" />
-        <SummaryCard label="Saíram hoje" value={summary.totalLeft} tone="emerald" />
+      <section className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+          <SummaryPill label="Na escola" value={summary.totalAtSchool} tone="slate" />
+          <SummaryPill label="Aguardando" value={summary.totalWaiting} tone="amber" />
+          <SummaryPill label="Verificação" value={summary.totalVerification} tone="rose" />
+          <SummaryPill label="Saíram hoje" value={summary.totalLeft} tone="emerald" />
+        </div>
       </section>
 
-      <section className="mb-4 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:grid-cols-[1.4fr_1fr_1fr_auto]">
-        <div className="relative">
-          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Busca rápida</label>
-          <input
-            ref={searchInputRef}
-            autoComplete="off"
-            autoCapitalize="none"
-            className="w-full rounded-2xl border border-slate-200 px-4 py-4 pr-12 text-base shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-            placeholder="Aluno, turma, família ou responsável"
-            value={searchDraft}
-            onChange={(event) => setSearchDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                setSearchDraft('')
-                setQuery('')
-                window.setTimeout(() => searchInputRef.current?.focus(), 0)
-              }
-            }}
-          />
-          {searchDraft ? (
+      <section className="sticky top-[4.4rem] z-20 mb-4 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur sm:top-[4.8rem]">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(170px,0.8fr)_minmax(220px,1fr)_auto]">
+          <div className="relative">
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Busca rápida</label>
+            <Search className="pointer-events-none absolute left-3 top-[2.35rem] h-4 w-4 text-slate-400" />
+            <input
+              ref={searchInputRef}
+              autoComplete="off"
+              autoCapitalize="none"
+              className="w-full rounded-2xl border border-slate-200 px-4 py-4 pl-10 pr-12 text-base shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+              placeholder="Buscar aluno, responsável ou turma..."
+              value={searchDraft}
+              onChange={(event) => setSearchDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setSearchDraft('')
+                  setQuery('')
+                  window.setTimeout(() => searchInputRef.current?.focus(), 0)
+                }
+              }}
+            />
+            {searchDraft ? (
+              <button
+                type="button"
+                className="absolute right-3 top-10 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
+                onClick={() => {
+                  setSearchDraft('')
+                  setQuery('')
+                  searchInputRef.current?.focus()
+                }}
+              >
+                Limpar
+              </button>
+            ) : null}
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Turno</label>
+            <select className="w-full rounded-2xl border border-slate-200 px-4 py-4 text-base shadow-sm" value={turno} onChange={(event) => setTurno(event.target.value)}>
+              {turnoOptions.map((item) => (
+                <option key={item.value} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Turma</label>
+            <select className="w-full rounded-2xl border border-slate-200 px-4 py-4 text-base shadow-sm" value={classFilter} onChange={(event) => setClassFilter(event.target.value)}>
+              {classOptions.map((item) => (
+                <option key={item.value} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className={`flex-1 rounded-2xl px-4 py-4 text-sm font-semibold ${layoutMode === 'list' ? 'bg-sky-700 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
+                onClick={() => setLayoutMode('list')}
+              >
+                Lista
+              </button>
+              <button
+                type="button"
+                className={`flex-1 rounded-2xl px-4 py-4 text-sm font-semibold ${layoutMode === 'cards' ? 'bg-sky-700 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
+                onClick={() => setLayoutMode('cards')}
+              >
+                Cards
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
+          <div className="min-w-[180px] flex-1 sm:max-w-[260px]">
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Dispositivo</label>
+            <input
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm shadow-sm placeholder:text-slate-400"
+              placeholder="Ex.: Portaria Infantil 1"
+              value={deviceLabel}
+              onChange={(event) => setDeviceLabel(event.target.value)}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50" onClick={() => void loadData({ force: true })}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              Atualizar
+            </button>
             <button
               type="button"
-              className="absolute right-3 top-10 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
-              onClick={() => {
-                setSearchDraft('')
-                setQuery('')
-                searchInputRef.current?.focus()
-              }}
+              disabled={!canReset || submitting}
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold ${canReset && !submitting ? 'border border-slate-200 bg-white text-slate-700' : 'cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400'}`}
+              onClick={() => setResetPending(true)}
             >
-              Limpar
+              Resetar dia
             </button>
-          ) : null}
+          </div>
         </div>
-        <div>
-          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Campus</label>
-          <select className="w-full rounded-2xl border border-slate-200 px-4 py-4 text-base shadow-sm" value={campus} onChange={(event) => setCampus(event.target.value)}>
-            <option value="todos">Todos os campus</option>
-            {CHECKOUT_CAMPUSES.map((item) => (
-              <option key={item} value={item}>{item}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Identificação do dispositivo</label>
-          <input
-            className="w-full rounded-2xl border border-slate-200 px-4 py-4 text-base shadow-sm"
-            placeholder="Ex.: Portaria Infantil 1"
-            value={deviceLabel}
-            onChange={(event) => setDeviceLabel(event.target.value)}
-          />
-        </div>
-        <div className="flex items-end">
-          <button type="button" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-semibold text-slate-700 shadow-sm" onClick={() => { setSearchDraft(''); setQuery(''); searchInputRef.current?.focus() }}>
-            Foco na busca
-          </button>
-        </div>
-      </section>
-
-      <section className="mb-4 flex flex-wrap items-center gap-2">
-        {VIEW_OPTIONS.filter((item) => getVisibleCheckoutViews(role).includes(item.key)).map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            className={`rounded-full px-4 py-2 text-sm font-semibold ${view === item.key ? 'bg-sky-700 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
-            onClick={() => setView(item.key)}
-          >
-            {item.label}
-          </button>
-        ))}
-        <span className="ml-0 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Visualização</span>
-        <button
-          type="button"
-          className={`rounded-full px-4 py-2 text-sm font-semibold ${layoutMode === 'list' ? 'bg-sky-700 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
-          onClick={() => setLayoutMode('list')}
-        >
-          Lista
-        </button>
-        <button
-          type="button"
-          className={`rounded-full px-4 py-2 text-sm font-semibold ${layoutMode === 'cards' ? 'bg-sky-700 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
-          onClick={() => setLayoutMode('cards')}
-        >
-          Cards
-        </button>
-        <button type="button" className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700" onClick={() => void loadData({ force: true })}>
-          Atualizar agora
-        </button>
-        <button
-          type="button"
-          disabled={!canReset || submitting}
-          className={`rounded-full px-4 py-2 text-sm font-semibold ${canReset && !submitting ? 'border border-slate-200 bg-white text-slate-700' : 'cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400'}`}
-          onClick={() => setResetPending(true)}
-        >
-          Resetar para "Na escola"
-        </button>
-      </section>
-
-      <section className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {summary.campuses.map((item) => (
-          <article key={item.campus} className="rounded-2xl border border-slate-200 bg-white p-4">
-            <p className="text-xs uppercase tracking-wide text-slate-500">{item.campus}</p>
-            <p className="mt-1 text-2xl font-extrabold text-slate-900">{item.total}</p>
-            <p className="mt-1 text-sm text-amber-700">{item.waiting} aguardando retirada</p>
-          </article>
-        ))}
       </section>
 
       {recentlyCalledStudents.length ? (
@@ -802,9 +975,9 @@ export default function StudentCheckoutPage() {
                 key={`${item.student_id}-${item.student_name}`}
                 type="button"
                 className="whitespace-nowrap rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900"
-                onClick={() => setSelectedStudentId(item.student_id)}
+                onClick={() => openStudentDetails(item.student_id)}
               >
-                {item.full_name || item.student_name || 'Aluno'}
+                {item.full_name || item.student_name || 'Sem nome'}
               </button>
             ))}
           </div>
@@ -834,27 +1007,15 @@ export default function StudentCheckoutPage() {
                 setManualPickupByStudent={setManualPickupByStudent}
                 authorizedByByStudent={authorizedByByStudent}
                 setAuthorizedByByStudent={setAuthorizedByByStudent}
-                onOpenProfile={() => setSelectedStudentId(row.student_id)}
+                onOpenProfile={() => openStudentDetails(row.student_id)}
                 highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
                 readOnly={mutationsLocked || submitting}
                 actions={[
                   {
-                    label: 'Chamar aluno',
-                    onClick: () => runStatusAction(row, 'guardian_arrived'),
+                    label: 'Chamar',
+                    onClick: () => handleQuickReceptionCall(row),
                     tone: 'amber',
                     hidden: !canRunReceptionAction(row, 'guardian_arrived'),
-                  },
-                  {
-                    label: 'Retirada excepcional',
-                    onClick: () => runStatusAction(row, 'needs_verification', { authorizedByName: authorizedByByStudent[row.student_id] || actorName }),
-                    tone: 'rose',
-                    hidden: !canRunReceptionAction(row, 'needs_verification'),
-                  },
-                  {
-                    label: 'Confirmar saída final',
-                    onClick: () => setFinalExitRow(row),
-                    tone: 'emerald',
-                    hidden: !canRunReceptionAction(row, 'left_school'),
                   },
                 ]}
               />
@@ -879,27 +1040,21 @@ export default function StudentCheckoutPage() {
                 setManualPickupByStudent={setManualPickupByStudent}
                 authorizedByByStudent={authorizedByByStudent}
                 setAuthorizedByByStudent={setAuthorizedByByStudent}
-                onOpenProfile={() => setSelectedStudentId(row.student_id)}
+                onOpenProfile={() => openStudentDetails(row.student_id)}
                 highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
                 readOnly={mutationsLocked || submitting}
                 actions={[
                   {
-                    label: 'Chamar aluno',
-                    onClick: () => runStatusAction(row, 'guardian_arrived'),
+                    label: 'Chamar',
+                    onClick: () => handleQuickReceptionCall(row),
                     tone: 'amber',
                     hidden: !canRunReceptionAction(row, 'guardian_arrived'),
                   },
                   {
-                    label: 'Retirada excepcional',
-                    onClick: () => runStatusAction(row, 'needs_verification', { authorizedByName: authorizedByByStudent[row.student_id] || actorName }),
-                    tone: 'rose',
-                    hidden: !canRunReceptionAction(row, 'needs_verification'),
-                  },
-                  {
-                    label: 'Confirmar saída final',
-                    onClick: () => setFinalExitRow(row),
-                    tone: 'emerald',
-                    hidden: !canRunReceptionAction(row, 'left_school'),
+                    label: 'Detalhes',
+                    onClick: () => openStudentDetails(row.student_id),
+                    tone: 'slate',
+                    hidden: false,
                   },
                 ]}
               />
@@ -929,7 +1084,7 @@ export default function StudentCheckoutPage() {
                 setManualPickupByStudent={setManualPickupByStudent}
                 authorizedByByStudent={authorizedByByStudent}
                 setAuthorizedByByStudent={setAuthorizedByByStudent}
-                onOpenProfile={() => setSelectedStudentId(row.student_id)}
+                onOpenProfile={() => openStudentDetails(row.student_id)}
                 highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
                 compactReceptionFields
                 readOnly={mutationsLocked || submitting}
@@ -939,30 +1094,6 @@ export default function StudentCheckoutPage() {
                     onClick: () => runStatusAction(row, 'preparing_release'),
                     tone: 'sky',
                     hidden: !canRunClassroomAction(row, 'preparing_release'),
-                  },
-                  {
-                    label: 'Pronto para retirada',
-                    onClick: () => runStatusAction(row, 'ready_for_pickup'),
-                    tone: 'cyan',
-                    hidden: !canRunClassroomAction(row, 'ready_for_pickup'),
-                  },
-                  {
-                    label: 'Liberado da sala',
-                    onClick: () => runStatusAction(row, 'released_from_classroom'),
-                    tone: 'violet',
-                    hidden: !canRunClassroomAction(row, 'released_from_classroom'),
-                  },
-                  {
-                    label: 'Necessita verificação',
-                    onClick: () => runStatusAction(row, 'needs_verification'),
-                    tone: 'rose',
-                    hidden: !canRunClassroomAction(row, 'needs_verification'),
-                  },
-                  {
-                    label: 'Ver perfil',
-                    onClick: () => setSelectedStudentId(row.student_id),
-                    tone: 'slate',
-                    hidden: false,
                   },
                 ]}
               />
@@ -987,7 +1118,7 @@ export default function StudentCheckoutPage() {
                 setManualPickupByStudent={setManualPickupByStudent}
                 authorizedByByStudent={authorizedByByStudent}
                 setAuthorizedByByStudent={setAuthorizedByByStudent}
-                onOpenProfile={() => setSelectedStudentId(row.student_id)}
+                onOpenProfile={() => openStudentDetails(row.student_id)}
                 highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
                 compactReceptionFields
                 readOnly={mutationsLocked || submitting}
@@ -999,26 +1130,8 @@ export default function StudentCheckoutPage() {
                     hidden: !canRunClassroomAction(row, 'preparing_release'),
                   },
                   {
-                    label: 'Pronto para retirada',
-                    onClick: () => runStatusAction(row, 'ready_for_pickup'),
-                    tone: 'cyan',
-                    hidden: !canRunClassroomAction(row, 'ready_for_pickup'),
-                  },
-                  {
-                    label: 'Liberado da sala',
-                    onClick: () => runStatusAction(row, 'released_from_classroom'),
-                    tone: 'violet',
-                    hidden: !canRunClassroomAction(row, 'released_from_classroom'),
-                  },
-                  {
-                    label: 'Necessita verificação',
-                    onClick: () => runStatusAction(row, 'needs_verification'),
-                    tone: 'rose',
-                    hidden: !canRunClassroomAction(row, 'needs_verification'),
-                  },
-                  {
-                    label: 'Ver perfil',
-                    onClick: () => setSelectedStudentId(row.student_id),
+                    label: 'Detalhes',
+                    onClick: () => openStudentDetails(row.student_id),
                     tone: 'slate',
                     hidden: false,
                   },
@@ -1063,7 +1176,7 @@ export default function StudentCheckoutPage() {
               </>
             ) : null}
           </div>
-          <div className="grid gap-4 p-4 xl:grid-cols-[1.2fr_1fr]">
+          <div className={`grid gap-4 p-4 ${useListLayout ? 'xl:grid-cols-1' : 'xl:grid-cols-[1.2fr_1fr]'}`}>
             <div className="space-y-3">
               {!filteredLogs.length ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-4 text-sm text-slate-500">
@@ -1081,7 +1194,7 @@ export default function StudentCheckoutPage() {
                       <button
                         key={row.id}
                         type="button"
-                        onClick={() => setSelectedStudentId(Number(row.student_id))}
+                        onClick={() => openStudentDetails(Number(row.student_id))}
                         className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm shadow-sm transition hover:border-slate-300 hover:shadow"
                       >
                         <div className="flex items-start justify-between gap-2">
@@ -1101,25 +1214,27 @@ export default function StudentCheckoutPage() {
                 </section>
               ))}
             </div>
-            <StudentProfilePanel
-              student={selectedStudent}
-              logs={selectedStudentLogs}
-              loading={studentLogsLoading}
-              error={studentLogsError}
-              period={studentLogPeriod}
-              setPeriod={setStudentLogPeriod}
-              from={studentLogFrom}
-              setFrom={setStudentLogFrom}
-              to={studentLogTo}
-              setTo={setStudentLogTo}
-              hasMore={studentLogsHasMore}
-              onLoadMore={() => void loadStudentLogs({ reset: false })}
-            />
+            {!useListLayout ? (
+              <StudentProfilePanel
+                student={selectedStudent}
+                logs={selectedStudentLogs}
+                loading={studentLogsLoading}
+                error={studentLogsError}
+                period={studentLogPeriod}
+                setPeriod={setStudentLogPeriod}
+                from={studentLogFrom}
+                setFrom={setStudentLogFrom}
+                to={studentLogTo}
+                setTo={setStudentLogTo}
+                hasMore={studentLogsHasMore}
+                onLoadMore={() => void loadStudentLogs({ reset: false })}
+              />
+            ) : null}
           </div>
         </section>
       ) : null}
 
-      {view !== 'support' ? (
+      {view !== 'support' && !useListLayout ? (
         <section className="mt-4">
           <StudentProfilePanel
             student={selectedStudent}
@@ -1137,6 +1252,51 @@ export default function StudentCheckoutPage() {
           />
         </section>
       ) : null}
+
+      {useListLayout && selectedStudent ? (
+        <StudentDetailsModal
+          student={selectedStudent}
+          mode={view}
+          actions={selectedStudentActions}
+          logs={selectedStudentLogs}
+          loading={studentLogsLoading}
+          error={studentLogsError}
+          period={studentLogPeriod}
+          setPeriod={setStudentLogPeriod}
+          from={studentLogFrom}
+          setFrom={setStudentLogFrom}
+          to={studentLogTo}
+          setTo={setStudentLogTo}
+          hasMore={studentLogsHasMore}
+          onLoadMore={() => void loadStudentLogs({ reset: false })}
+          onClose={() => setSelectedStudentId(null)}
+          notesByStudent={notesByStudent}
+          setNotesByStudent={setNotesByStudent}
+          pickupGuardianByStudent={pickupGuardianByStudent}
+          setPickupGuardianByStudent={setPickupGuardianByStudent}
+          manualPickupByStudent={manualPickupByStudent}
+          setManualPickupByStudent={setManualPickupByStudent}
+          authorizedByByStudent={authorizedByByStudent}
+          setAuthorizedByByStudent={setAuthorizedByByStudent}
+          readOnly={mutationsLocked || submitting}
+        />
+      ) : null}
+
+      <GuardianPickDialog
+        row={guardianPickerRow}
+        open={Boolean(guardianPickerRow)}
+        onClose={() => setGuardianPickerRow(null)}
+        onPick={(guardian) => {
+          if (!guardianPickerRow) return
+          const pickedRow = guardianPickerRow
+          setGuardianPickerRow(null)
+          void runStatusAction(pickedRow, 'guardian_arrived', {
+            pickupGuardianId: guardian.id,
+            pickupPersonName: guardian.full_name,
+            authorizedByName: authorizedByByStudent[pickedRow.student_id] || actorName,
+          })
+        }}
+      />
 
       <ConfirmationDialog
         open={Boolean(finalExitRow)}
@@ -1177,6 +1337,47 @@ export default function StudentCheckoutPage() {
   )
 }
 
+function GuardianPickDialog({ row, open, onClose, onPick }) {
+  if (!open || !row) return null
+  const guardians = row.authorized_guardians || []
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/45 px-3 py-3 sm:items-center sm:px-4">
+      <div className="w-full max-w-md rounded-3xl bg-white p-4 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Selecione quem chegou</p>
+            <h3 className="mt-1 text-lg font-extrabold text-slate-900">{row.full_name}</h3>
+            <p className="text-sm text-slate-500">{row.class_name}</p>
+          </div>
+          <button
+            type="button"
+            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
+            onClick={onClose}
+          >
+            Fechar
+          </button>
+        </div>
+        <div className="mt-4 grid gap-2">
+          {guardians.length ? guardians.map((guardian) => (
+            <button
+              key={guardian.id}
+              type="button"
+              className="rounded-2xl bg-amber-100 px-4 py-4 text-left text-sm font-extrabold text-amber-900 hover:bg-amber-200"
+              onClick={() => onPick(guardian)}
+            >
+              {guardian.full_name}
+            </button>
+          )) : (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+              Nenhum responsável autorizado disponível.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SummaryCard({ label, value, tone }) {
   const tones = {
     slate: 'text-slate-900',
@@ -1189,6 +1390,21 @@ function SummaryCard({ label, value, tone }) {
       <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
       <p className={`mt-1 text-3xl font-extrabold ${tones[tone] || tones.slate}`}>{value}</p>
     </article>
+  )
+}
+
+function SummaryPill({ label, value, tone }) {
+  const tones = {
+    slate: 'bg-slate-100 text-slate-700',
+    amber: 'bg-amber-100 text-amber-900',
+    rose: 'bg-rose-100 text-rose-900',
+    emerald: 'bg-emerald-100 text-emerald-900',
+  }
+  return (
+    <div className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold ${tones[tone] || tones.slate}`}>
+      <span className="text-lg font-extrabold leading-none">{value}</span>
+      <span className="uppercase tracking-wide">{label}</span>
+    </div>
   )
 }
 
@@ -1205,20 +1421,55 @@ function StudentProfilePanel({
   setTo,
   hasMore,
   onLoadMore,
+  onClose = null,
+  actions = [],
+  className = '',
+  mode = 'reception',
+  showOperationalControls = false,
+  readOnly = false,
+  notesByStudent = {},
+  setNotesByStudent = null,
+  pickupGuardianByStudent = {},
+  setPickupGuardianByStudent = null,
+  manualPickupByStudent = {},
+  setManualPickupByStudent = null,
+  authorizedByByStudent = {},
+  setAuthorizedByByStudent = null,
 }) {
+  const [logsOpen, setLogsOpen] = useState(!showOperationalControls)
+  const pickupDisplayName = student?.pickup_guardian_name || student?.pickup_person_name || ''
+  const showPickupControls = showOperationalControls && (mode === 'reception' || mode === 'support')
+  const studentDisplayName = student?.full_name || student?.student_name || 'Selecione um aluno'
+  const selectedGuardianId = Number(pickupGuardianByStudent[student?.student_id] || 0)
+
+  useEffect(() => {
+    setLogsOpen(!showOperationalControls)
+  }, [showOperationalControls, student?.student_id])
+
   return (
-    <aside className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+    <aside className={`rounded-3xl border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Perfil operacional</p>
-          <h3 className="break-words text-lg font-extrabold text-slate-900">{student?.full_name || 'Selecione um aluno'}</h3>
+          <h3 className="break-words text-lg font-extrabold text-slate-900">{studentDisplayName}</h3>
           <p className="break-words text-sm text-slate-500">{student ? `${student.class_name} • ${student.campus}` : 'Abra um cartão para ver histórico e ações.'}</p>
         </div>
-        {student ? (
-          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getCheckoutStatusClass(student.status)}`}>
-            {getCheckoutStatusLabel(student.status)}
-          </span>
-        ) : null}
+        <div className="flex items-start gap-2">
+          {student ? (
+            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getCheckoutStatusClass(student.status)}`}>
+              {getCheckoutStatusLabel(student.status)}
+            </span>
+          ) : null}
+          {onClose ? (
+            <button
+              type="button"
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
+              onClick={onClose}
+            >
+              Fechar
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {student ? (
@@ -1228,88 +1479,268 @@ function StudentProfilePanel({
               Pendência operacional: revisar saída ou autorização anterior.
             </div>
           ) : null}
-          <div className="mt-3 rounded-2xl bg-slate-50 p-3 text-sm text-slate-700">
-            <p className="font-semibold text-slate-900">Responsáveis autorizados</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {student.authorized_guardians?.length ? student.authorized_guardians.map((item) => (
-                <span key={item.id} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                  {item.full_name}
-                </span>
-              )) : <span className="text-xs text-rose-700">Nenhuma pessoa autorizada cadastrada.</span>}
+          {pickupDisplayName ? (
+            <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              Retirada atual: <strong>{pickupDisplayName}</strong>
             </div>
-          </div>
+          ) : null}
+          {showPickupControls ? (
+            <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Controle operacional</p>
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Quem veio buscar?</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {student.authorized_guardians?.length ? student.authorized_guardians.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      disabled={readOnly}
+                      className={`rounded-2xl px-4 py-3 text-left text-sm font-extrabold ${readOnly ? 'cursor-not-allowed bg-slate-100 text-slate-400' : selectedGuardianId === Number(item.id) ? 'bg-amber-200 text-amber-950 ring-2 ring-amber-400' : 'bg-amber-100 text-amber-900 hover:bg-amber-200'}`}
+                      onClick={() => {
+                        setPickupGuardianByStudent?.((current) => ({ ...current, [student.student_id]: String(item.id) }))
+                        setManualPickupByStudent?.((current) => ({ ...current, [student.student_id]: '' }))
+                        setNotesByStudent?.((current) => ({ ...current, [student.student_id]: current[student.student_id] || '' }))
+                      }}
+                      >
+                        {item.full_name}
+                      </button>
+                  )) : (
+                    <p className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">Nenhum responsável autorizado cadastrado.</p>
+                  )}
+                </div>
+              </div>
+              <div className="grid gap-3 lg:grid-cols-[1fr_1fr]">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Outro responsável</label>
+                  <input
+                    disabled={readOnly || !setManualPickupByStudent}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
+                    placeholder="Usar apenas se não estiver na lista"
+                    value={manualPickupByStudent[student.student_id] || ''}
+                    onChange={(event) => setManualPickupByStudent?.((current) => ({ ...current, [student.student_id]: event.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Autorizado por</label>
+                  <input
+                    disabled={readOnly || !setAuthorizedByByStudent}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
+                    placeholder="Operador / coordenação"
+                    value={authorizedByByStudent[student.student_id] || ''}
+                    onChange={(event) => setAuthorizedByByStudent?.((current) => ({ ...current, [student.student_id]: event.target.value }))}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : null}
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            {LOG_FILTERS.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                className={`rounded-full px-3 py-2 text-xs font-semibold ${period === item.key ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
-                onClick={() => setPeriod(item.key)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-
-          {period === 'custom' ? (
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <input
-                type="date"
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                value={from}
-                onChange={(event) => setFrom(event.target.value)}
-              />
-              <input
-                type="date"
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                value={to}
-                onChange={(event) => setTo(event.target.value)}
+          {showOperationalControls ? (
+            <div className="mt-4">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Observação operacional</label>
+              <textarea
+                rows={2}
+                disabled={readOnly || !setNotesByStudent}
+                className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
+                placeholder="Obrigatório quando houver verificação manual"
+                value={notesByStudent[student.student_id] || ''}
+                onChange={(event) => setNotesByStudent?.((current) => ({ ...current, [student.student_id]: event.target.value }))}
               />
             </div>
           ) : null}
 
-          {error ? (
-            <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">{error}</div>
+          {actions.length ? (
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {actions.map((action) => (
+                <button
+                  key={action.label}
+                  type="button"
+                  disabled={readOnly || action.disabled}
+                  className={`rounded-2xl px-4 py-4 text-sm font-extrabold ${readOnly || action.disabled ? 'cursor-not-allowed bg-slate-100 text-slate-400' : buttonTone(action.tone)}`}
+                  onClick={action.onClick}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
           ) : null}
 
-          <div className="mt-4 space-y-2">
-            {loading ? <LoadingRow text="Carregando histórico..." /> : null}
-            {!loading && logs.length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-slate-200 px-4 py-3 text-sm text-slate-500">Sem logs para o período selecionado.</p>
-            ) : null}
-            {logs.map((item) => (
-              <article key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-                <p className="font-semibold text-slate-900">
-                  {item.previous_status ? `${getCheckoutStatusLabel(item.previous_status)} → ${getCheckoutStatusLabel(item.new_status)}` : getCheckoutStatusLabel(item.new_status)}
-                </p>
-                <p className="text-xs text-slate-500">{item.created_at ? new Date(item.created_at).toLocaleString('pt-BR') : '-'}</p>
-                <p className="mt-1 text-slate-700">
-                  {item.changed_by_name || '-'}{item.authorized_by_name ? ` • Autorizado por ${item.authorized_by_name}` : ''}
-                </p>
-                {item.pickup_person_name || item.pickup_guardian_name ? (
-                  <p className="text-slate-600">Retirada: {item.pickup_guardian_name || item.pickup_person_name}</p>
+          <div className="mt-4">
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+              onClick={() => setLogsOpen((current) => !current)}
+            >
+              {logsOpen ? 'Ocultar histórico' : 'Ver histórico'}
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">{logs.length}</span>
+            </button>
+          </div>
+
+          {logsOpen ? (
+            <>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {LOG_FILTERS.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    className={`rounded-full px-3 py-2 text-xs font-semibold ${period === item.key ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
+                    onClick={() => setPeriod(item.key)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+
+              {period === 'custom' ? (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <input
+                    type="date"
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    value={from}
+                    onChange={(event) => setFrom(event.target.value)}
+                  />
+                  <input
+                    type="date"
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    value={to}
+                    onChange={(event) => setTo(event.target.value)}
+                  />
+                </div>
+              ) : null}
+
+              {error ? (
+                <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">{error}</div>
+              ) : null}
+
+              <div className="mt-4 space-y-2">
+                {loading && logs.length === 0 ? <LoadingRow text="Carregando histórico..." /> : null}
+                {loading && logs.length > 0 ? (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-500">
+                    Atualizando histórico...
+                  </div>
                 ) : null}
-                {item.note ? <p className="text-slate-600">Obs.: {item.note}</p> : null}
-              </article>
-            ))}
-          </div>
+                {!loading && logs.length === 0 ? (
+                  <p className="rounded-2xl border border-dashed border-slate-200 px-4 py-3 text-sm text-slate-500">Sem logs para o período selecionado.</p>
+                ) : null}
+                {logs.map((item) => (
+                  <article key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+                    <p className="font-semibold text-slate-900">
+                      {item.previous_status ? `${getCheckoutStatusLabel(item.previous_status)} → ${getCheckoutStatusLabel(item.new_status)}` : getCheckoutStatusLabel(item.new_status)}
+                    </p>
+                    <p className="text-xs text-slate-500">{item.created_at ? new Date(item.created_at).toLocaleString('pt-BR') : '-'}</p>
+                    <p className="mt-1 text-slate-700">
+                      {item.changed_by_name || '-'}{item.authorized_by_name ? ` • Autorizado por ${item.authorized_by_name}` : ''}
+                    </p>
+                    {item.pickup_person_name || item.pickup_guardian_name ? (
+                      <p className="text-slate-600">Retirada: {item.pickup_guardian_name || item.pickup_person_name}</p>
+                    ) : null}
+                    {item.note ? <p className="text-slate-600">Obs.: {item.note}</p> : null}
+                  </article>
+                ))}
+              </div>
 
-          <div className="mt-4 flex items-center justify-between gap-2">
-            <p className="text-xs text-slate-500">Mostrando {logs.length} registros recentes.</p>
-            {hasMore ? (
-              <button
-                type="button"
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
-                onClick={onLoadMore}
-              >
-                Carregar mais
-              </button>
-            ) : null}
-          </div>
+              <div className="mt-4 flex items-center justify-between gap-2">
+                <p className="text-xs text-slate-500">Mostrando {logs.length} registros recentes.</p>
+                {hasMore ? (
+                  <button
+                    type="button"
+                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+                    onClick={onLoadMore}
+                  >
+                    Carregar mais
+                  </button>
+                ) : null}
+              </div>
+            </>
+          ) : null}
         </>
       ) : null}
     </aside>
+  )
+}
+
+function StudentDetailsModal({
+  student,
+  mode,
+  actions,
+  logs,
+  loading,
+  error,
+  period,
+  setPeriod,
+  from,
+  setFrom,
+  to,
+  setTo,
+  hasMore,
+  onLoadMore,
+  onClose,
+  notesByStudent,
+  setNotesByStudent,
+  pickupGuardianByStudent,
+  setPickupGuardianByStudent,
+  manualPickupByStudent,
+  setManualPickupByStudent,
+  authorizedByByStudent,
+  setAuthorizedByByStudent,
+  readOnly,
+}) {
+  useEffect(() => {
+    if (!student) return undefined
+    const previousOverflow = document.body.style.overflow
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose?.()
+    }
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [onClose, student])
+
+  if (!student) return null
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 px-0 sm:items-center sm:px-4"
+      onClick={() => onClose?.()}
+      role="presentation"
+    >
+      <div
+        className="w-full max-h-[92vh] overflow-hidden bg-white shadow-2xl sm:my-4 sm:max-w-5xl sm:rounded-3xl"
+        onClick={(event) => event.stopPropagation()}
+        role="presentation"
+      >
+        <StudentProfilePanel
+          student={student}
+          logs={logs}
+          loading={loading}
+          error={error}
+          period={period}
+          setPeriod={setPeriod}
+          from={from}
+          setFrom={setFrom}
+          to={to}
+          setTo={setTo}
+          hasMore={hasMore}
+          onLoadMore={onLoadMore}
+          onClose={onClose}
+          actions={actions}
+          className="h-full max-h-[92vh] overflow-y-auto rounded-none border-0 shadow-none sm:rounded-3xl"
+          mode={mode}
+          showOperationalControls
+          readOnly={readOnly}
+          notesByStudent={notesByStudent}
+          setNotesByStudent={setNotesByStudent}
+          pickupGuardianByStudent={pickupGuardianByStudent}
+          setPickupGuardianByStudent={setPickupGuardianByStudent}
+          manualPickupByStudent={manualPickupByStudent}
+          setManualPickupByStudent={setManualPickupByStudent}
+          authorizedByByStudent={authorizedByByStudent}
+          setAuthorizedByByStudent={setAuthorizedByByStudent}
+        />
+      </div>
+    </div>
   )
 }
 
@@ -1503,167 +1934,66 @@ const CheckoutQueueRow = memo(function CheckoutQueueRow({
   readOnly = false,
 }) {
   const visibleActions = actions.filter((action) => !action.hidden)
+  const primaryAction = visibleActions[0] || null
+  const studentDisplayName = row.full_name || row.student_name || 'Sem nome'
   const pickupDisplayName = row.pickup_guardian_name || row.pickup_person_name || ''
 
   return (
-    <article className={`rounded-2xl border bg-white p-3 shadow-sm transition-all duration-200 ${highlight ? 'border-amber-300 bg-amber-50/50 ring-2 ring-amber-200' : 'border-slate-200'}`}>
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="break-words text-base font-extrabold text-slate-900 sm:text-lg">{row.full_name}</p>
-            <p className="break-words text-sm text-slate-500">{row.class_name} • {row.campus}</p>
-            <p className="break-words text-sm text-slate-500">{row.family_name}</p>
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getCheckoutStatusClass(row.status)}`}>
-              {getCheckoutStatusLabel(row.status)}
+    <article
+      role="button"
+      tabIndex={0}
+      aria-label={`Abrir detalhes de ${studentDisplayName}`}
+      onClick={onOpenProfile}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onOpenProfile?.()
+        }
+      }}
+      className={`cursor-pointer rounded-2xl border bg-white p-2.5 shadow-sm transition-all duration-200 hover:border-slate-300 hover:shadow-md sm:p-3 ${highlight ? 'border-amber-300 bg-amber-50/50 ring-2 ring-amber-200' : 'border-slate-200'}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${getCheckoutStatusClass(row.status)}`}>
+          {getCheckoutStatusLabel(row.status)}
+        </span>
+        <div className="flex items-center gap-2">
+          {row.status === 'needs_verification' ? (
+            <span className="rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-semibold text-rose-800">
+              Verificação
             </span>
-            {row.status === 'needs_verification' ? (
-              <span className="rounded-full bg-rose-100 px-3 py-1 text-[11px] font-semibold text-rose-800">
-                Pendência operacional
-              </span>
-            ) : highlight ? (
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800">
-                Novo na fila
-              </span>
-            ) : null}
-            {onOpenProfile ? (
-              <button
-                type="button"
-                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
-                onClick={onOpenProfile}
-              >
-                Ver perfil
-              </button>
-            ) : null}
-          </div>
+          ) : highlight ? (
+            <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-800">
+              Novo
+            </span>
+          ) : null}
         </div>
+      </div>
 
-        {row.activities.length ? (
-          <div className="flex flex-wrap gap-2">
-            {row.activities.map((item) => (
-              <span key={item} className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">{item}</span>
-            ))}
-          </div>
-        ) : null}
-
-        <div className="grid gap-2 md:grid-cols-2">
-          <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Responsáveis autorizados</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {row.authorized_guardians.length ? row.authorized_guardians.map((item) => (
-                <span key={item.id} className="max-w-full break-words rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                  {item.full_name}
-                </span>
-              )) : <span className="text-xs text-rose-700">Nenhuma pessoa autorizada cadastrada.</span>}
-            </div>
-          </div>
-
-          <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status operacional</p>
-            {pickupDisplayName ? (
-              <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
-                Retirada em andamento por <strong>{pickupDisplayName}</strong>
-              </p>
-            ) : null}
-            {row.verification_note ? (
-              <p className="mt-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-rose-900">
-                Verificação pendente: {row.verification_note}
-              </p>
-            ) : null}
-          </div>
+      <div className="mt-2.5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <p className="break-words text-[15px] font-extrabold leading-tight text-slate-900 sm:text-[17px]">{studentDisplayName}</p>
+          <p className="break-words text-xs font-medium text-slate-500 sm:text-sm">{row.class_name}</p>
+          {pickupDisplayName ? (
+            <p className="break-words text-xs text-slate-600 sm:text-sm">
+              Retirada: <span className="font-semibold text-slate-800">{pickupDisplayName}</span>
+            </p>
+          ) : null}
         </div>
-
-        <div className="grid gap-2 lg:grid-cols-3">
-          {mode === 'reception' && !compactReceptionFields ? (
-            <>
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Responsável identificado</label>
-                <select
-                  disabled={readOnly}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
-                  value={pickupGuardianByStudent[row.student_id] || ''}
-                  onChange={(event) => setPickupGuardianByStudent((current) => ({ ...current, [row.student_id]: event.target.value }))}
-                >
-                  <option value="">Selecione responsável autorizado</option>
-                  {row.authorized_guardians.map((item) => (
-                    <option key={item.id} value={item.id}>{item.full_name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Ou informe outro nome</label>
-                <input
-                  disabled={readOnly}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
-                  placeholder="Usar quando não estiver na lista"
-                  value={manualPickupByStudent[row.student_id] || ''}
-                  onChange={(event) => setManualPickupByStudent((current) => ({ ...current, [row.student_id]: event.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Autorizado por</label>
-                <input
-                  disabled={readOnly}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
-                  placeholder="Operador / coordenação"
-                  value={authorizedByByStudent[row.student_id] || ''}
-                  onChange={(event) => setAuthorizedByByStudent((current) => ({ ...current, [row.student_id]: event.target.value }))}
-                />
-              </div>
-            </>
-          ) : (
-            <div className="lg:col-span-3">
-              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Observação operacional</label>
-              <textarea
-                rows={2}
-                disabled={readOnly}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
-                placeholder="Obrigatório quando houver verificação manual"
-                value={notesByStudent[row.student_id] || ''}
-                onChange={(event) => setNotesByStudent((current) => ({ ...current, [row.student_id]: event.target.value }))}
-              />
-            </div>
-          )}
-        </div>
-
-        {mode === 'reception' && !compactReceptionFields ? (
-          <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Observação operacional</label>
-            <textarea
-              rows={2}
-              disabled={readOnly}
-              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
-              placeholder="Obrigatório quando houver verificação manual"
-              value={notesByStudent[row.student_id] || ''}
-              onChange={(event) => setNotesByStudent((current) => ({ ...current, [row.student_id]: event.target.value }))}
-            />
-          </div>
-        ) : null}
-
-        {visibleActions.length ? (
-          <div className="flex flex-wrap gap-2">
-            {visibleActions.map((action) => (
-              <button
-                key={action.label}
-                type="button"
-                disabled={readOnly}
-                className={`rounded-2xl px-3 py-3 text-sm font-extrabold ${readOnly ? 'cursor-not-allowed bg-slate-100 text-slate-400' : buttonTone(action.tone)} ${action.fullWidth ? 'flex-1' : ''}`}
-                onClick={action.onClick}
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        <button
-          type="button"
-          className="self-start rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
-          onClick={onOpenProfile}
-        >
-          Ver detalhes
-        </button>
+        {primaryAction ? (
+          <button
+            type="button"
+            disabled={readOnly}
+            className={`w-full rounded-2xl px-4 py-3 text-sm font-extrabold sm:w-auto ${readOnly ? 'cursor-not-allowed bg-slate-100 text-slate-400' : buttonTone(primaryAction.tone)}`}
+            onClick={(event) => {
+              event.stopPropagation()
+              primaryAction.onClick()
+            }}
+          >
+            {primaryAction.label}
+          </button>
+        ) : (
+          <span className="text-xs font-semibold text-slate-400 sm:self-center">Toque para ver detalhes</span>
+        )}
       </div>
     </article>
   )

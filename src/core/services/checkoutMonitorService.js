@@ -148,6 +148,8 @@ function mapBoardRow({
     student_id: Number(student.id),
     family_id: Number(student.family_id),
     full_name: student.full_name,
+    student_name: student.full_name,
+    shift_name: checkoutRow?.shift_name_snapshot || student.shift_name || '',
     class_name: checkoutRow?.class_name_snapshot || student.class_name || 'Sem turma',
     campus,
     family_name: buildFamilyLabel(family),
@@ -178,6 +180,8 @@ function mapOperationalBoardRow(row) {
     student_id: Number(row.student_id),
     family_id: null,
     full_name: row.full_name,
+    student_name: row.full_name || row.student_name || 'Sem nome',
+    shift_name: row.shift_name || row.turno_name || '',
     class_name: row.class_name || 'Sem turma',
     campus: row.campus_name || 'Campus pendente',
     family_name: row.family_name || 'Família sem nome',
@@ -237,6 +241,7 @@ function mergeOperationalCheckoutRow(baseRow, currentCheckoutRow = null, previou
       released_from_classroom_by_name: currentCheckoutRow.released_from_classroom_by_name ?? merged.released_from_classroom_by_name,
       left_school_at: currentCheckoutRow.left_school_at ?? merged.left_school_at,
       left_school_by_name: currentCheckoutRow.left_school_by_name ?? merged.left_school_by_name,
+      shift_name: currentCheckoutRow.shift_name ?? merged.shift_name,
       updated_at: currentCheckoutRow.updated_at ?? merged.updated_at,
       updated_by_name: currentCheckoutRow.updated_by_name ?? merged.updated_by_name,
       source_system: currentCheckoutRow.source_system || merged.source_system,
@@ -247,6 +252,7 @@ function mergeOperationalCheckoutRow(baseRow, currentCheckoutRow = null, previou
       raw_payload_hash: currentCheckoutRow.raw_payload_hash || merged.raw_payload_hash,
       authorized_by_user_id: currentCheckoutRow.authorized_by_user_id ?? merged.authorized_by_user_id,
       authorized_by_name: currentCheckoutRow.authorized_by_name ?? merged.authorized_by_name,
+      student_name: currentCheckoutRow.student_name || merged.student_name,
     })
   } else if (previousCheckoutRow && normalizeCheckoutStatus(previousCheckoutRow.status) !== 'left_school') {
     Object.assign(merged, {
@@ -264,6 +270,7 @@ function mergeOperationalCheckoutRow(baseRow, currentCheckoutRow = null, previou
       released_from_classroom_by_name: previousCheckoutRow.released_from_classroom_by_name ?? merged.released_from_classroom_by_name,
       left_school_at: null,
       left_school_by_name: '',
+      shift_name: previousCheckoutRow.shift_name ?? merged.shift_name,
       updated_at: previousCheckoutRow.updated_at || merged.updated_at,
       updated_by_name: previousCheckoutRow.updated_by_name || merged.updated_by_name,
       source_system: previousCheckoutRow.source_system || merged.source_system,
@@ -562,22 +569,31 @@ export class CheckoutMonitorService {
   async #listBoardFromSupabase() {
     const today = todayKey()
     const yesterday = normalizeDateOnly(new Date(Date.now() - 86400000).toISOString())
-    const [studentsRes, todayRes, yesterdayRes] = await Promise.all([
+    const [studentsRes, classesRes, todayRes, yesterdayRes] = await Promise.all([
       this.supabase.from('checkout_active_students_view').select('*').order('full_name', { ascending: true }),
+      this.supabase.from('checkout_active_classes_view').select('source_class_id, shift_name'),
       this.supabase.from('student_checkout_daily').select('*').eq('checkout_date', today),
       this.supabase.from('student_checkout_daily').select('*').eq('checkout_date', yesterday),
     ])
 
-    const errors = [studentsRes.error, todayRes.error, yesterdayRes.error].filter(Boolean)
+    const errors = [studentsRes.error, classesRes.error, todayRes.error, yesterdayRes.error].filter(Boolean)
     if (errors.length > 0) throw new Error(errors[0].message || 'Não foi possível carregar o monitor de saída.')
 
+    const classShiftById = new Map(toArray(classesRes.data).map((item) => [Number(item.source_class_id), item.shift_name || '']))
     const todayByStudent = new Map(toArray(todayRes.data).map((item) => [Number(item.student_id), item]))
     const yesterdayByStudent = new Map(toArray(yesterdayRes.data).map((item) => [Number(item.student_id), item]))
 
     return toArray(studentsRes.data).map((row) => {
       const currentCheckoutRow = todayByStudent.get(Number(row.student_id)) || null
       const previousCheckoutRow = currentCheckoutRow ? null : yesterdayByStudent.get(Number(row.student_id)) || null
-      const mergedRow = mergeOperationalCheckoutRow(row, currentCheckoutRow, previousCheckoutRow)
+      const mergedRow = mergeOperationalCheckoutRow(
+        {
+          ...row,
+          shift_name: classShiftById.get(Number(row.class_id)) || row.shift_name || '',
+        },
+        currentCheckoutRow,
+        previousCheckoutRow,
+      )
       return mapOperationalBoardRow(mergedRow)
     })
   }
@@ -585,11 +601,11 @@ export class CheckoutMonitorService {
   async #listLogsFromLocal() {
     const data = this.database.read()
     const studentsById = new Map(toArray(data.students).map((item) => [Number(item.id), item.full_name]))
-    return toArray(data.student_checkout_logs)
-      .map((item) => ({
-        ...item,
-        student_name: studentsById.get(Number(item.student_id)) || 'Aluno',
-      }))
+  return toArray(data.student_checkout_logs)
+    .map((item) => ({
+      ...item,
+      student_name: studentsById.get(Number(item.student_id)) || 'Sem nome',
+    }))
       .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
   }
 
@@ -604,7 +620,7 @@ export class CheckoutMonitorService {
     const studentsById = new Map(toArray(studentsRes.data).map((item) => [Number(item.student_id), item.full_name]))
     return toArray(logsRes.data).map((item) => ({
       ...item,
-      student_name: studentsById.get(Number(item.student_id)) || 'Aluno',
+      student_name: studentsById.get(Number(item.student_id)) || 'Sem nome',
     }))
   }
 
