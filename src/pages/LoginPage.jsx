@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { LayoutDashboard } from 'lucide-react'
-import { hasSupabaseConfig } from '../lib/supabaseClient'
+import { hasSupabaseConfig, isLocalCheckoutMode } from '../lib/supabaseClient'
+
+const IS_DEV = import.meta.env.DEV
+const SHOW_DEMO_BUTTON = IS_DEV || isLocalCheckoutMode
 import { useRole } from '../core/auth/roleContext'
 
 export default function LoginPage() {
@@ -47,9 +50,7 @@ export default function LoginPage() {
 
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <p className="mb-4 text-sm text-slate-600">
-            {hasSupabaseConfig
-              ? 'Use seu e-mail e senha para acessar o sistema.'
-              : 'Modo local ativo — o perfil será identificado pelo cadastro interno.'}
+            Use seu e-mail e senha para acessar o sistema.
           </p>
 
           <form className="space-y-3" onSubmit={handleSubmit}>
@@ -77,18 +78,20 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div className="mt-4 border-t border-slate-100 pt-4">
-            <button
-              type="button"
-              className="w-full rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-sm font-semibold text-sky-700 transition hover:bg-sky-100"
-              onClick={handleDemo}
-            >
-              Acessar demo de saída de alunos
-            </button>
-            <p className="mt-2 text-center text-xs text-slate-400">
-              Acesso apenas ao módulo de saída de alunos. Não abre o demo geral.
-            </p>
-          </div>
+          {SHOW_DEMO_BUTTON ? (
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                className="w-full rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-sm font-semibold text-sky-700 transition hover:bg-sky-100"
+                onClick={handleDemo}
+              >
+                Acessar demo de saída de alunos
+              </button>
+              <p className="mt-2 text-center text-xs text-slate-400">
+                Acesso apenas ao módulo de saída de alunos. Não abre o demo geral.
+              </p>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

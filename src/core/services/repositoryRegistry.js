@@ -25,7 +25,7 @@ import {
   SupabaseResponsibleRepository,
   SupabaseStudentRepository,
 } from '../repositories/supabase/supabaseRepositories'
-import { hasSupabaseConfig, supabase } from '../../lib/supabaseClient'
+import { hasSupabaseConfig, isLocalCheckoutMode, isLowEgressMode, supabase } from '../../lib/supabaseClient'
 import { ContractService } from './contractService'
 import { EventService } from './eventService'
 import { FinancialService } from './financialService'
@@ -129,6 +129,8 @@ export const checkoutMonitorService = new CheckoutMonitorService({
   supabase,
   hasSupabaseConfig,
   allowLocalFallback: import.meta.env.DEV && import.meta.env.VITE_CHECKOUT_LOCAL_FALLBACK === 'true',
+  useLocalApi: isLocalCheckoutMode,
+  lowEgress: isLowEgressMode,
 })
 
 export {

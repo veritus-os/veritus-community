@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "local:server": "node scripts/local-checkout-server.js",
+    "local:dev": "cp .env.local-checkout .env.local && vite --host"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.0",

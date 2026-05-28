@@ -1,0 +1,119 @@
+{
+  "audit_date": "2026-05-28",
+  "database": {
+    "project_ref": "bnggrjkllpgisdgmnjvm",
+    "project_name": "veritus-os",
+    "region": "South America (Sao Paulo)",
+    "total_size_mb": 129,
+    "total_size_bytes": 135168000,
+    "free_tier_limit_mb": 500
+  },
+  "schema_breakdown": {
+    "public": { "size_pretty": "132 MB", "bytes": 138428416, "pct_of_total": 88 },
+    "extensions": { "size_pretty": "7,352 kB", "bytes": 7528448, "pct_of_total": 5 },
+    "auth": { "size_pretty": "2,224 kB", "bytes": 2277376, "pct_of_total": 2 },
+    "realtime": { "size_pretty": "376 kB", "bytes": 385024, "pct_of_total": 0 },
+    "storage": { "size_pretty": "368 kB", "bytes": 376832, "pct_of_total": 0 },
+    "supabase_migrations": { "size_pretty": "144 kB", "bytes": 147456, "pct_of_total": 0 },
+    "vault": { "size_pretty": "40 kB", "bytes": 40960, "pct_of_total": 0 }
+  },
+  "cleanup_summary": {
+    "removable_tables_count": 21,
+    "removable_total_size_pretty": "99 MB",
+    "removable_total_bytes": 103546880,
+    "keep_tables_count": 24,
+    "keep_total_size_pretty": "9,216 kB",
+    "keep_total_bytes": 9437184,
+    "estimated_db_size_after_mb": 30,
+    "estimated_recovery_mb": 99,
+    "estimated_recovery_pct": 77,
+    "free_tier_pct_after_cleanup": 6
+  },
+  "checkout_health": {
+    "active_students": 385,
+    "active_classes": 37,
+    "active_guardians": 785,
+    "views_operational": true,
+    "realtime_configured": true
+  },
+  "top_10_largest_tables": [
+    { "table": "sponte_raw_contas_receber_parcelas", "size": "56 MB", "bytes": 59211776, "rows": 33369, "action": "REMOVE" },
+    { "table": "sponte_raw_rps", "size": "19 MB", "bytes": 19783680, "rows": 15341, "action": "REMOVE" },
+    { "table": "sponte_raw_contas_receber", "size": "11 MB", "bytes": 11427840, "rows": 6373, "action": "REMOVE" },
+    { "table": "sponte_raw_rps_parcelas", "size": "8,688 kB", "bytes": 8896512, "rows": 15341, "action": "REMOVE" },
+    { "table": "sponte_raw_contratos", "size": "2,016 kB", "bytes": 2064384, "rows": 1397, "action": "REMOVE" },
+    { "table": "sponte_raw_alunos", "size": "1,856 kB", "bytes": 1900544, "rows": 760, "action": "KEEP" },
+    { "table": "sponte_raw_responsaveis", "size": "1,840 kB", "bytes": 1884160, "rows": 915, "action": "KEEP" },
+    { "table": "sponte_raw_alunos_empresas", "size": "1,600 kB", "bytes": 1638400, "rows": 760, "action": "KEEP" },
+    { "table": "sponte_raw_contratos_turmas", "size": "1,464 kB", "bytes": 1499136, "rows": 1399, "action": "REMOVE" },
+    { "table": "sponte_raw_turma_alunos", "size": "1,360 kB", "bytes": 1392640, "rows": 1400, "action": "KEEP" }
+  ],
+  "tables_to_remove": [
+    { "table": "sponte_raw_contas_receber_parcelas", "size": "56 MB", "rows": 33369, "category": "finance_staging" },
+    { "table": "sponte_raw_rps", "size": "19 MB", "rows": 15341, "category": "finance_staging" },
+    { "table": "sponte_raw_contas_receber", "size": "11 MB", "rows": 6373, "category": "finance_staging" },
+    { "table": "sponte_raw_rps_parcelas", "size": "8,688 kB", "rows": 15341, "category": "finance_staging" },
+    { "table": "sponte_raw_contratos", "size": "2,016 kB", "rows": 1397, "category": "finance_staging" },
+    { "table": "sponte_raw_contratos_turmas", "size": "1,464 kB", "rows": 1399, "category": "finance_staging" },
+    { "table": "sponte_raw_multi_empresa", "size": "96 kB", "rows": 1, "category": "company_staging" },
+    { "table": "sponte_raw_series", "size": "96 kB", "rows": 19, "category": "reference_staging" },
+    { "table": "normalization_errors", "size": "48 kB", "rows": 0, "category": "error_logs" },
+    { "table": "schools", "size": "40 kB", "rows": 0, "category": "admin_platform" },
+    { "table": "import_errors", "size": "40 kB", "rows": 0, "category": "error_logs" },
+    { "table": "feature_flags", "size": "32 kB", "rows": 0, "category": "admin_platform" },
+    { "table": "invoices", "size": "32 kB", "rows": 0, "category": "finance_module" },
+    { "table": "assets", "size": "32 kB", "rows": 0, "category": "asset_tracking" },
+    { "table": "pickup_requests", "size": "32 kB", "rows": 0, "category": "pickup_module" },
+    { "table": "attendance", "size": "32 kB", "rows": 0, "category": "attendance_module" },
+    { "table": "bug_reports", "size": "32 kB", "rows": 0, "category": "admin_platform" },
+    { "table": "meal_contracts", "size": "24 kB", "rows": 0, "category": "meal_module" },
+    { "table": "teacher_contents", "size": "24 kB", "rows": 0, "category": "teacher_module" },
+    { "table": "teachers", "size": "24 kB", "rows": 0, "category": "teacher_module" },
+    { "table": "assets_inventory", "size": "24 kB", "rows": 0, "category": "asset_tracking" },
+    { "table": "financial_summary", "size": "24 kB", "rows": 0, "category": "finance_module" },
+    { "table": "extra_services", "size": "16 kB", "rows": 0, "category": "meal_module" }
+  ],
+  "tables_to_keep": [
+    "students", "guardians", "families", "profiles",
+    "student_checkout_daily", "student_checkout_logs",
+    "activity_tags", "student_activity_tags",
+    "campuses", "checkout_class_campus_assignments",
+    "classes", "class_memberships", "student_guardians",
+    "import_batches", "import_normalization_batches",
+    "sponte_raw_turmas", "sponte_raw_turma_alunos",
+    "sponte_raw_alunos_empresas", "sponte_raw_alunos",
+    "sponte_raw_responsaveis", "sponte_raw_alunos_responsaveis",
+    "sponte_raw_cursos", "sponte_raw_turnos", "sponte_raw_salas"
+  ],
+  "tables_uncertain": [],
+  "views_to_drop": [
+    "family_centric_dashboard",
+    "family_debt_dashboard",
+    "view_daily_kitchen_report",
+    "portaria_live_eta",
+    "inadimplencia_dashboard"
+  ],
+  "views_to_keep": [
+    "checkout_active_students_view",
+    "checkout_active_classes_view",
+    "checkout_active_guardians_view"
+  ],
+  "functions_to_drop": [
+    "set_financial_net_value",
+    "update_parent_location"
+  ],
+  "functions_to_keep": [
+    "checkout_active_students_snapshot",
+    "checkout_active_classes_snapshot",
+    "checkout_active_guardians_snapshot",
+    "is_school_staff",
+    "can_operate_student_checkout",
+    "can_manage_sponte_staging",
+    "current_app_access_type"
+  ],
+  "auth_impact": "none",
+  "realtime_changes": {
+    "remove_from_publication": ["attendance"],
+    "keep_in_publication": ["student_checkout_daily", "student_checkout_logs"]
+  }
+}

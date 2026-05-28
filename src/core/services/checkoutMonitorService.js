@@ -6,8 +6,17 @@ import {
   normalizeCheckoutStatus,
   normalizeDateOnly,
 } from '../models/checkoutModels'
+import * as localApi from './localCheckoutApiClient'
 
 const LOCAL_STORAGE_KEY = 'cav_os_school_data_v6'
+const IS_DEV = import.meta.env.DEV
+const LOG_REQUESTS = IS_DEV && import.meta.env.VITE_CHECKOUT_SUPABASE_LOW_EGRESS === 'true'
+
+function logQuery(name, rowCount, trigger = 'auto') {
+  if (!LOG_REQUESTS) return
+  const ts = new Date().toLocaleTimeString()
+  console.log(`[checkout-egress] ${ts} | ${name} | rows=${rowCount} | trigger=${trigger}`)
+}
 const RECEPTION_ROLES = ['super_admin', 'admin', 'secretaria', 'reception', 'support']
 const CLASSROOM_ROLES = ['super_admin', 'admin', 'secretaria', 'professor', 'infantil_coordination', 'fundamental_coordination', 'support']
 const RESET_ROLES = ['super_admin', 'admin', 'secretaria']
@@ -76,7 +85,7 @@ function toArray(value) {
 }
 
 function sortByName(rows) {
-  return [...rows].sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || ''), 'pt-BR'))
+  return [...rows].sort((a, b) => String(a.display_name || a.full_name || '').localeCompare(String(b.display_name || b.full_name || ''), 'pt-BR'))
 }
 
 function requireStatusTransition(currentStatus, nextStatus) {
@@ -127,6 +136,18 @@ function summarizeActivities(student, activityLinks = [], activityCatalog = []) 
   return dedupeActivities([...linkedActivities, ...fallbackActivities, ...plantao])
 }
 
+function resolveStudentDisplayName(row = {}) {
+  return String(
+    row.full_name ||
+    row.student_name ||
+    row.student_full_name ||
+    row.student_display_name ||
+    row.nome ||
+    row.name ||
+    ''
+  ).trim()
+}
+
 function mapBoardRow({
   student,
   family,
@@ -147,8 +168,9 @@ function mapBoardRow({
   return {
     student_id: Number(student.id),
     family_id: Number(student.family_id),
-    full_name: student.full_name,
-    student_name: student.full_name,
+    full_name: resolveStudentDisplayName(student),
+    student_name: resolveStudentDisplayName(student),
+    display_name: resolveStudentDisplayName(student),
     shift_name: checkoutRow?.shift_name_snapshot || student.shift_name || '',
     class_name: checkoutRow?.class_name_snapshot || student.class_name || 'Sem turma',
     campus,
@@ -179,8 +201,9 @@ function mapOperationalBoardRow(row) {
   return {
     student_id: Number(row.student_id),
     family_id: null,
-    full_name: row.full_name,
-    student_name: row.full_name || row.student_name || 'Sem nome',
+    full_name: resolveStudentDisplayName(row),
+    student_name: resolveStudentDisplayName(row),
+    display_name: resolveStudentDisplayName(row),
     shift_name: row.shift_name || row.turno_name || '',
     class_name: row.class_name || 'Sem turma',
     campus: row.campus_name || 'Campus pendente',
@@ -253,6 +276,7 @@ function mergeOperationalCheckoutRow(baseRow, currentCheckoutRow = null, previou
       authorized_by_user_id: currentCheckoutRow.authorized_by_user_id ?? merged.authorized_by_user_id,
       authorized_by_name: currentCheckoutRow.authorized_by_name ?? merged.authorized_by_name,
       student_name: currentCheckoutRow.student_name || merged.student_name,
+      display_name: currentCheckoutRow.display_name || merged.display_name,
     })
   } else if (previousCheckoutRow && normalizeCheckoutStatus(previousCheckoutRow.status) !== 'left_school') {
     Object.assign(merged, {
@@ -281,6 +305,7 @@ function mergeOperationalCheckoutRow(baseRow, currentCheckoutRow = null, previou
       raw_payload_hash: previousCheckoutRow.raw_payload_hash || merged.raw_payload_hash,
       authorized_by_user_id: previousCheckoutRow.authorized_by_user_id ?? merged.authorized_by_user_id,
       authorized_by_name: previousCheckoutRow.authorized_by_name ?? merged.authorized_by_name,
+      display_name: previousCheckoutRow.display_name ?? merged.display_name,
     })
   }
 
@@ -332,23 +357,49 @@ function clearOperationalFields(record) {
 }
 
 export class CheckoutMonitorService {
-  constructor({ database, schoolCrudService, supabase, hasSupabaseConfig, allowLocalFallback = false }) {
+  constructor({ database, schoolCrudService, supabase, hasSupabaseConfig, allowLocalFallback = false, useLocalApi = false, lowEgress = false }) {
     this.database = database
     this.schoolCrudService = schoolCrudService
     this.supabase = supabase
     this.hasSupabaseConfig = Boolean(hasSupabaseConfig && supabase)
     this.allowLocalFallback = Boolean(allowLocalFallback)
+    this.useLocalApi = Boolean(useLocalApi)
+    this.lowEgress = Boolean(lowEgress)
+    this._pollVersion = 0
+    // Low-egress caches
+    this._cachedStudents = null
+    this._cachedClasses = null
+    this._cachedStudentNames = null
+    this._cacheTs = 0
+    this._consecutiveErrors = 0
   }
 
   isRealtimeEnabled() {
-    return this.hasSupabaseConfig
+    return this.hasSupabaseConfig && !this.lowEgress
+  }
+
+  isLowEgress() {
+    return this.lowEgress
   }
 
   canUseLocalFallback() {
-    return this.allowLocalFallback
+    return this.allowLocalFallback || this.useLocalApi
   }
 
   subscribe(onChange) {
+    if (this.useLocalApi) {
+      const interval = setInterval(async () => {
+        try {
+          const data = await localApi.localPoll()
+          if (data.version !== this._pollVersion) {
+            this._pollVersion = data.version
+            onChange()
+          }
+        } catch { /* server unreachable, skip */ }
+      }, 3000)
+      return () => clearInterval(interval)
+    }
+
     if (!this.hasSupabaseConfig) {
       if (!this.allowLocalFallback) return () => {}
       const handler = (event) => {
@@ -356,6 +407,11 @@ export class CheckoutMonitorService {
       }
       window.addEventListener('storage', handler)
       return () => window.removeEventListener('storage', handler)
+    }
+
+    // Low-egress: disable realtime, use polling only
+    if (this.lowEgress) {
+      return () => {}
     }
 
     const channel = this.supabase
@@ -372,12 +428,14 @@ export class CheckoutMonitorService {
 
   async listBoard(filters = {}) {
     assertCampus(filters.campus)
-    const rows = this.hasSupabaseConfig
-      ? await this.#listBoardFromSupabase()
-      : this.allowLocalFallback
-        ? await this.#listBoardFromLocal()
-        : []
-    if (!this.hasSupabaseConfig && !this.allowLocalFallback) {
+    let rows
+    if (this.useLocalApi) {
+      rows = await localApi.localListBoard()
+    } else if (this.hasSupabaseConfig) {
+      rows = await this.#listBoardFromSupabase()
+    } else if (this.allowLocalFallback) {
+      rows = await this.#listBoardFromLocal()
+    } else {
       throw new Error('O monitor de saída do piloto exige Supabase configurado.')
     }
     return filterBoardRows(sortByName(rows), filters)
@@ -385,12 +443,14 @@ export class CheckoutMonitorService {
 
   async listAuditLogs(filters = {}) {
     assertCampus(filters.campus)
-    const rows = this.hasSupabaseConfig
-      ? await this.#listLogsFromSupabase()
-      : this.allowLocalFallback
-        ? await this.#listLogsFromLocal()
-        : []
-    if (!this.hasSupabaseConfig && !this.allowLocalFallback) {
+    let rows
+    if (this.useLocalApi) {
+      rows = await localApi.localListLogs(filters.campus)
+    } else if (this.hasSupabaseConfig) {
+      rows = await this.#listLogsFromSupabase()
+    } else if (this.allowLocalFallback) {
+      rows = await this.#listLogsFromLocal()
+    } else {
       throw new Error('O monitor de saída do piloto exige Supabase configurado.')
     }
 
@@ -423,7 +483,7 @@ export class CheckoutMonitorService {
     confirmed = false,
   }) {
     requireAuthenticatedActor(actorId, actorName)
-    if (!this.hasSupabaseConfig && !this.allowLocalFallback) {
+    if (!this.hasSupabaseConfig && !this.allowLocalFallback && !this.useLocalApi) {
       throw new Error('O monitor de saída do piloto exige Supabase configurado.')
     }
 
@@ -477,6 +537,20 @@ export class CheckoutMonitorService {
       }
     }
 
+    if (this.useLocalApi) {
+      const result = await localApi.localTransitionStatus({
+        studentId: Number(studentId),
+        nextStatus: normalizedStatus,
+        note: trimmedNote,
+        campus: campus || row.campus,
+        deviceLabel,
+        pickupGuardianId: pickupGuardian ? Number(pickupGuardian.id) : pickupGuardianId,
+        pickupPersonName: pickupName,
+        confirmed,
+      })
+      return result.record
+    }
+
     if (this.hasSupabaseConfig) {
       return this.#transitionInSupabase({
         row,
@@ -516,11 +590,16 @@ export class CheckoutMonitorService {
 
   async resetDay({ actorName, actorId = null, actorRole = '', campus = 'todos', deviceLabel = '' }) {
     requireAuthenticatedActor(actorId, actorName)
-    if (!this.hasSupabaseConfig && !this.allowLocalFallback) {
+    if (!this.hasSupabaseConfig && !this.allowLocalFallback && !this.useLocalApi) {
       throw new Error('O monitor de saída do piloto exige Supabase configurado.')
     }
     if (!RESET_ROLES.includes(actorRole)) {
       throw new Error('Seu perfil não pode resetar o monitor diário de saída.')
+    }
+
+    if (this.useLocalApi) {
+      await localApi.localResetDay(campus)
+      return true
     }
 
     const rows = await this.listBoard({ includeAbsent: true })
@@ -569,6 +648,11 @@ export class CheckoutMonitorService {
   async #listBoardFromSupabase() {
     const today = todayKey()
     const yesterday = normalizeDateOnly(new Date(Date.now() - 86400000).toISOString())
+
+    if (this.lowEgress) {
+      return this.#listBoardLowEgress(today, yesterday)
+    }
+
     const [studentsRes, classesRes, todayRes, yesterdayRes] = await Promise.all([
       this.supabase.from('checkout_active_students_view').select('*').order('full_name', { ascending: true }),
       this.supabase.from('checkout_active_classes_view').select('source_class_id, shift_name'),
@@ -598,6 +682,81 @@ export class CheckoutMonitorService {
     })
   }
 
+  async #listBoardLowEgress(today, yesterday) {
+    const STUDENT_COLS = 'student_id,full_name,class_id,class_name,campus_id,campus_name,family_name,shift_name,authorized_guardians'
+    const DAILY_COLS = 'student_id,checkout_date,status,campus_name,class_name_snapshot,pickup_guardian_id,pickup_guardian_name,pickup_person_name,note,verification_note,guardian_arrived_at,guardian_arrived_by_name,ready_for_pickup_at,ready_for_pickup_by_name,released_from_classroom_at,released_from_classroom_by_name,left_school_at,left_school_by_name,updated_at,updated_by_name'
+    const CACHE_TTL = 5 * 60 * 1000 // 5 minutes for static data
+    const now = Date.now()
+
+    // Cache students and classes — they change rarely during a session
+    const needStaticRefresh = !this._cachedStudents || (now - this._cacheTs > CACHE_TTL)
+    const queries = []
+
+    if (needStaticRefresh) {
+      queries.push(
+        this.supabase.from('checkout_active_students_view').select(STUDENT_COLS).order('full_name', { ascending: true }),
+        this.supabase.from('checkout_active_classes_view').select('source_class_id, shift_name'),
+      )
+    }
+    // Always fetch today's checkout state (small — only rows with changes)
+    queries.push(
+      this.supabase.from('student_checkout_daily').select(DAILY_COLS).eq('checkout_date', today),
+    )
+    // Yesterday only on first load
+    if (needStaticRefresh) {
+      queries.push(
+        this.supabase.from('student_checkout_daily').select(DAILY_COLS).eq('checkout_date', yesterday),
+      )
+    }
+
+    const results = await Promise.all(queries)
+    const errors = results.map((r) => r.error).filter(Boolean)
+    if (errors.length > 0) {
+      this._consecutiveErrors++
+      throw new Error(errors[0].message || 'Não foi possível carregar o monitor de saída.')
+    }
+    this._consecutiveErrors = 0
+
+    let studentsData, classesData, todayData, yesterdayData
+    if (needStaticRefresh) {
+      studentsData = toArray(results[0].data)
+      classesData = toArray(results[1].data)
+      todayData = toArray(results[2].data)
+      yesterdayData = toArray(results[3]?.data)
+      this._cachedStudents = studentsData
+      this._cachedClasses = classesData
+      this._cacheTs = now
+      logQuery('students_view (full)', studentsData.length, 'cache-miss')
+      logQuery('classes_view', classesData.length, 'cache-miss')
+      logQuery('daily_today', todayData.length, 'cache-miss')
+      logQuery('daily_yesterday', toArray(yesterdayData).length, 'cache-miss')
+    } else {
+      studentsData = this._cachedStudents
+      classesData = this._cachedClasses
+      todayData = toArray(results[0].data)
+      yesterdayData = []
+      logQuery('daily_today (cached students)', todayData.length, 'poll')
+    }
+
+    const classShiftById = new Map(classesData.map((item) => [Number(item.source_class_id), item.shift_name || '']))
+    const todayByStudent = new Map(todayData.map((item) => [Number(item.student_id), item]))
+    const yesterdayByStudent = new Map(toArray(yesterdayData).map((item) => [Number(item.student_id), item]))
+
+    return studentsData.map((row) => {
+      const currentCheckoutRow = todayByStudent.get(Number(row.student_id)) || null
+      const previousCheckoutRow = currentCheckoutRow ? null : yesterdayByStudent.get(Number(row.student_id)) || null
+      const mergedRow = mergeOperationalCheckoutRow(
+        {
+          ...row,
+          shift_name: classShiftById.get(Number(row.class_id)) || row.shift_name || '',
+        },
+        currentCheckoutRow,
+        previousCheckoutRow,
+      )
+      return mapOperationalBoardRow(mergedRow)
+    })
+  }
+
   async #listLogsFromLocal() {
     const data = this.database.read()
     const studentsById = new Map(toArray(data.students).map((item) => [Number(item.id), item.full_name]))
@@ -610,15 +769,33 @@ export class CheckoutMonitorService {
   }
 
   async #listLogsFromSupabase() {
-    const [logsRes, studentsRes] = await Promise.all([
-      this.supabase.from('student_checkout_logs').select('*').order('created_at', { ascending: false }).limit(300),
-      this.supabase.from('checkout_active_students_view').select('student_id, full_name, campus_name'),
-    ])
-    if (logsRes.error) throw new Error(logsRes.error.message)
-    if (studentsRes.error) throw new Error(studentsRes.error.message)
+    const LOG_COLS = 'student_id,checkout_date,previous_status,new_status,changed_by_name,campus_name,pickup_guardian_name,pickup_person_name,note,created_at'
+    const logLimit = this.lowEgress ? 30 : 300
 
-    const studentsById = new Map(toArray(studentsRes.data).map((item) => [Number(item.student_id), item.full_name]))
-    return toArray(logsRes.data).map((item) => ({
+    // In low-egress mode, reuse cached student names from board instead of re-fetching
+    let studentsById
+    if (this.lowEgress && this._cachedStudents) {
+      studentsById = new Map(this._cachedStudents.map((item) => [Number(item.student_id), item.full_name]))
+    }
+
+    const queries = [
+      this.supabase.from('student_checkout_logs').select(this.lowEgress ? LOG_COLS : '*').order('created_at', { ascending: false }).limit(logLimit),
+    ]
+    if (!studentsById) {
+      queries.push(this.supabase.from('checkout_active_students_view').select('student_id, full_name, campus_name'))
+    }
+
+    const results = await Promise.all(queries)
+    if (results[0].error) throw new Error(results[0].error.message)
+
+    if (!studentsById) {
+      if (results[1]?.error) throw new Error(results[1].error.message)
+      studentsById = new Map(toArray(results[1].data).map((item) => [Number(item.student_id), item.full_name]))
+    }
+
+    const logRows = toArray(results[0].data)
+    logQuery('audit_logs', logRows.length, studentsById ? 'cached-names' : 'full')
+    return logRows.map((item) => ({
       ...item,
       student_name: studentsById.get(Number(item.student_id)) || 'Sem nome',
     }))
@@ -627,6 +804,11 @@ export class CheckoutMonitorService {
   async listStudentLogs({ studentId, period = 'month', from = '', to = '', offset = 0, limit = 20 } = {}) {
     const normalizedStudentId = Number(studentId)
     if (!normalizedStudentId) return { rows: [], hasMore: false, range: resolveLogRange(period, from, to) }
+
+    if (this.useLocalApi) {
+      const result = await localApi.localListStudentLogs({ studentId: normalizedStudentId, offset, limit })
+      return { rows: result.rows, hasMore: result.hasMore, range: resolveLogRange(period, from, to) }
+    }
 
     const range = resolveLogRange(period, from, to)
     const filterRows = (rows) => {
@@ -644,12 +826,14 @@ export class CheckoutMonitorService {
     }
 
     if (this.hasSupabaseConfig) {
+      const fetchLimit = this.lowEgress ? 50 : 500
+      const cols = this.lowEgress ? 'student_id,checkout_date,previous_status,new_status,changed_by_name,campus_name,pickup_guardian_name,pickup_person_name,note,created_at' : '*'
       const { data, error } = await this.supabase
         .from('student_checkout_logs')
-        .select('*')
+        .select(cols)
         .eq('student_id', normalizedStudentId)
         .order('created_at', { ascending: false })
-        .limit(500)
+        .limit(fetchLimit)
       if (error) throw new Error(error.message)
       const rows = filterRows(toArray(data))
       return {

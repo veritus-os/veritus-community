@@ -13,6 +13,12 @@ dist-ssr
 *.local
 .env
 .env.*
+!.env.example
+!.env.production.template
+!.env.local-checkout
+
+# Local checkout server runtime data (seed is tracked, runtime is not)
+scripts/data/local-checkout-data.json
 
 # Editor directories and files
 .vscode/*

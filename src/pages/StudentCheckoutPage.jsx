@@ -29,8 +29,9 @@ const LOG_FILTERS = [
 ]
 const RECENT_CALL_LIMIT = 5
 const SYNC_STALE_MS = 30000
-const BOARD_REFRESH_MS = 20000
-const BOARD_REFRESH_COOLDOWN_MS = 1200
+const LOW_EGRESS = checkoutMonitorService.isLowEgress()
+const BOARD_REFRESH_MS = LOW_EGRESS ? 12000 : 20000
+const BOARD_REFRESH_COOLDOWN_MS = LOW_EGRESS ? 5000 : 1200
 const TURN_FILTER_OPTIONS = [
   { key: 'todos', label: 'Todos os turnos' },
   { key: 'manha', label: 'Manhã' },
@@ -195,7 +196,7 @@ function sortByPriority(rows) {
   return [...rows].sort((a, b) => {
     const statusDiff = (priority[a.status] ?? 99) - (priority[b.status] ?? 99)
     if (statusDiff !== 0) return statusDiff
-    return String(a.full_name || '').localeCompare(String(b.full_name || ''), 'pt-BR')
+    return String(a.display_name || a.full_name || '').localeCompare(String(b.display_name || b.full_name || ''), 'pt-BR')
   })
 }
 
@@ -269,6 +270,7 @@ export default function StudentCheckoutPage() {
   const [authorizedByByStudent, setAuthorizedByByStudent] = useState({})
   const [recentlyCalledStudents, setRecentlyCalledStudents] = useState([])
   const [freshStudentIds, setFreshStudentIds] = useState([])
+  const [busyStudentIds, setBusyStudentIds] = useState(() => new Set())
   const [lastSyncAt, setLastSyncAt] = useState(null)
   const [connectionNotice, setConnectionNotice] = useState('')
 
@@ -287,10 +289,16 @@ export default function StudentCheckoutPage() {
   const actorId = user?.id || null
   const realtimeEnabled = checkoutMonitorService.isRealtimeEnabled()
   const localFallbackEnabled = checkoutMonitorService.canUseLocalFallback()
-  const mutationsLocked = !actorId || (!realtimeEnabled && !localFallbackEnabled)
+  const lowEgressEnabled = checkoutMonitorService.isLowEgress()
+  const mutationsLocked = !actorId || (!realtimeEnabled && !localFallbackEnabled && !lowEgressEnabled)
   const canReset = !mutationsLocked && RESET_ROLES.includes(role)
 
   useEffect(() => {
+    // Device label is retained only for audit/log traceability; keep a safe default even when hidden from the main UI.
+    if (!deviceLabel) {
+      setDeviceLabel(`Checkout ${role || 'operador'}`)
+      return
+    }
     window.localStorage.setItem(DEVICE_STORAGE_KEY, deviceLabel)
   }, [deviceLabel])
 
@@ -306,7 +314,7 @@ export default function StudentCheckoutPage() {
     }
   }, [searchDraft])
 
-  const loadData = useEffectEvent(async ({ showInitialLoader = false, force = false } = {}) => {
+  const loadData = useEffectEvent(async ({ showInitialLoader = false, force = false, skipLogs = false } = {}) => {
     if (refreshInFlightRef.current) {
       refreshQueuedRef.current = true
       return
@@ -316,6 +324,7 @@ export default function StudentCheckoutPage() {
     const now = Date.now()
     const isCooldownRefresh = !force && !shouldShowLoader && now - lastRefreshAtRef.current < BOARD_REFRESH_COOLDOWN_MS
     if (isCooldownRefresh) return
+    const hadLoadedOnce = hasLoadedOnceRef.current
 
     refreshInFlightRef.current = true
     refreshQueuedRef.current = false
@@ -327,12 +336,20 @@ export default function StudentCheckoutPage() {
       setSyncing(true)
     }
 
+    // In low-egress mode, skip logs on automatic refreshes — load them on demand only
+    const shouldLoadLogs = !skipLogs && !(LOW_EGRESS && hadLoadedOnce && !force)
+
     try {
       setError('')
-      const [boardRows, auditRows] = await Promise.all([
-        checkoutMonitorService.listBoard({ includeAbsent: true }),
-        checkoutMonitorService.listAuditLogs({}),
-      ])
+      const promises = [checkoutMonitorService.listBoard({ includeAbsent: true })]
+      if (shouldLoadLogs) {
+        promises.push(checkoutMonitorService.listAuditLogs({}))
+      }
+      const [boardResult, auditResult] = await Promise.allSettled(promises)
+      if (boardResult.status !== 'fulfilled') {
+        throw boardResult.reason instanceof Error ? boardResult.reason : new Error(boardResult.reason?.message || 'Não foi possível carregar o monitor de saída.')
+      }
+      const boardRows = boardResult.value
       const previousById = previousRowsRef.current
       const nextById = new Map(boardRows.map((row) => [Number(row.student_id), row]))
       const freshIds = []
@@ -355,9 +372,7 @@ export default function StudentCheckoutPage() {
       previousRowsRef.current = nextById
       hasLoadedOnceRef.current = true
       setRows(boardRows)
-      setLogs(auditRows)
       setLastSyncAt(Date.now())
-      setConnectionNotice('')
       if (freshIds.length > 0) {
         setFreshStudentIds(freshIds)
         triggerOperationalFeedback('call')
@@ -367,9 +382,42 @@ export default function StudentCheckoutPage() {
       if (releasedCount > 0) {
         triggerOperationalFeedback('release')
       }
+      if (auditResult.status === 'fulfilled') {
+        setLogs(auditResult.value)
+        setConnectionNotice('')
+      } else if (auditResult.status === 'rejected') {
+        const auditMessage = auditResult.reason instanceof Error ? auditResult.reason.message : auditResult.reason?.message || 'Não foi possível carregar o histórico operacional.'
+        if (!hadLoadedOnce) {
+          setError(auditMessage)
+        } else {
+          setConnectionNotice(
+            navigator.onLine
+              ? 'Histórico temporariamente indisponível'
+              : 'Offline'
+          )
+        }
+      }
     } catch (err) {
-      setError(err.message || 'Não foi possível carregar o monitor de saída.')
-      setConnectionNotice('Falha de sincronização. Tentando novamente...')
+      const message = err?.message || 'Não foi possível carregar o monitor de saída.'
+      const isQuotaError = /quota|egress|rate.limit|too.many|429/i.test(message)
+      if (isQuotaError && LOW_EGRESS) {
+        setConnectionNotice('Limite de uso Supabase atingido. Reduzindo frequência de atualização.')
+        // Back off: pause polling temporarily
+        if (refreshTimerRef.current) {
+          clearInterval(refreshTimerRef.current)
+          refreshTimerRef.current = window.setInterval(() => {
+            if (document.visibilityState === 'visible') void loadData({ skipLogs: true })
+          }, 30000)
+        }
+      } else if (!hasLoadedOnceRef.current) {
+        setError(message)
+      } else {
+        setConnectionNotice(
+          navigator.onLine
+            ? 'Sincronização temporariamente indisponível'
+            : 'Offline'
+        )
+      }
     } finally {
       refreshInFlightRef.current = false
       if (shouldShowLoader) {
@@ -397,12 +445,15 @@ export default function StudentCheckoutPage() {
   }, [loadData])
 
   useEffect(() => {
-    const refreshNow = () => void loadData()
+    const refreshNow = (force = false) => {
+      if (!force && navigator.onLine === false) return
+      void loadData({ force })
+    }
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') refreshNow()
     }
     const handleFocus = () => refreshNow()
-    const handleOnline = () => refreshNow()
+    const handleOnline = () => refreshNow(true)
     window.addEventListener('focus', handleFocus)
     window.addEventListener('online', handleOnline)
     document.addEventListener('visibilitychange', handleVisibility)
@@ -509,7 +560,7 @@ export default function StudentCheckoutPage() {
         const matchesClass = classFilter === 'all' || row.class_name === classFilter
         const matchesQuery =
           !normalizedQuery ||
-          row.full_name.toLowerCase().includes(normalizedQuery) ||
+          String(row.display_name || row.full_name || '').toLowerCase().includes(normalizedQuery) ||
           row.class_name.toLowerCase().includes(normalizedQuery) ||
           String(row.shift_name || '').toLowerCase().includes(normalizedQuery) ||
           row.family_name.toLowerCase().includes(normalizedQuery) ||
@@ -589,6 +640,7 @@ export default function StudentCheckoutPage() {
   }, [rows])
 
   const useListLayout = layoutMode === 'list'
+  const selectedStudentBusy = selectedStudent ? busyStudentIds.has(Number(selectedStudent.student_id)) : false
 
   function openStudentDetails(studentId) {
     setSelectedStudentId(studentId)
@@ -653,8 +705,14 @@ export default function StudentCheckoutPage() {
   }
 
   async function runStatusAction(row, nextStatus, { confirmed = false, authorizedByName = '', pickupGuardianId = null, pickupPersonName = '', note = '' } = {}) {
+    const studentBusyId = Number(row.student_id)
     try {
       setSubmitting(true)
+      setBusyStudentIds((current) => {
+        const next = new Set(current)
+        next.add(studentBusyId)
+        return next
+      })
       setError('')
       applyOptimisticStatus(row, nextStatus, {
         note: note || notesByStudent[row.student_id] || '',
@@ -677,7 +735,6 @@ export default function StudentCheckoutPage() {
         confirmed,
       })
       clearDrafts(row.student_id)
-      await loadData()
       if (nextStatus === 'guardian_arrived') {
         setRecentlyCalledStudents((current) => {
           const next = [row, ...current.filter((item) => Number(item.student_id) !== Number(row.student_id))]
@@ -687,13 +744,24 @@ export default function StudentCheckoutPage() {
       if (nextStatus === 'left_school') {
         triggerOperationalFeedback('release')
       }
+      // In low-egress mode, rely on optimistic update — delay server refetch
+      if (LOW_EGRESS) {
+        setTimeout(() => void loadData({ skipLogs: true }), 4000)
+      } else {
+        void loadData({ force: true })
+      }
       return true
     } catch (err) {
-      await loadData()
+      void loadData({ force: true })
       setError(err.message || 'Não foi possível atualizar o status do aluno.')
       return false
     } finally {
       setSubmitting(false)
+      setBusyStudentIds((current) => {
+        const next = new Set(current)
+        next.delete(studentBusyId)
+        return next
+      })
     }
   }
 
@@ -765,11 +833,20 @@ export default function StudentCheckoutPage() {
   })
 
   useEffect(() => {
-    if (!selectedStudentId) return
-    const requestKey = `${selectedStudentId}|${studentLogPeriod}|${studentLogFrom}|${studentLogTo}`
-    if (studentLogsLoadedKeyRef.current === requestKey && studentLogs.length > 0) return
-    void loadStudentLogs({ reset: true, studentId: selectedStudentId, period: studentLogPeriod, from: studentLogFrom, to: studentLogTo, force: true })
-  }, [loadStudentLogs, selectedStudentId, studentLogFrom, studentLogPeriod, studentLogTo, studentLogs.length])
+    if (!selectedStudentId) {
+      studentLogsLoadedKeyRef.current = ''
+      setStudentLogs([])
+      setStudentLogsHasMore(false)
+      setStudentLogsOffset(0)
+      setStudentLogsError('')
+      return
+    }
+    studentLogsLoadedKeyRef.current = ''
+    setStudentLogs([])
+    setStudentLogsHasMore(false)
+    setStudentLogsOffset(0)
+    setStudentLogsError('')
+  }, [selectedStudentId])
 
   const selectedStudentActions = useMemo(() => {
     if (!selectedStudent) return []
@@ -824,13 +901,13 @@ export default function StudentCheckoutPage() {
   }, [handleQuickReceptionCall, role, runStatusAction, selectedStudent, setFinalExitRow, view])
 
   const syncStatusLabel = connectionNotice
-    ? 'Offline'
-    : syncing
-      ? 'Sincronizando…'
-      : lastSyncAt && Date.now() - lastSyncAt < SYNC_STALE_MS
-        ? 'Atualizado agora'
-        : 'Online'
-  const syncStatusTone = connectionNotice ? 'rose' : syncing ? 'amber' : 'emerald'
+    ? connectionNotice
+    : !realtimeEnabled && !lowEgressEnabled
+      ? 'Modo local'
+      : lastSyncAt && Date.now() - lastSyncAt > SYNC_STALE_MS
+        ? 'Dados desatualizados'
+        : ''
+  const syncStatusTone = connectionNotice ? 'rose' : 'amber'
 
   return (
     <CheckoutShell
@@ -842,9 +919,7 @@ export default function StudentCheckoutPage() {
 
       {mutationsLocked ? (
         <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
-          {realtimeEnabled
-            ? 'Faça login com um usuário autenticado antes de registrar chegada de responsável, liberação em sala ou saída final.'
-            : 'O piloto operacional exige Supabase configurado. O fallback local só deve ser usado quando VITE_CHECKOUT_LOCAL_FALLBACK=true em desenvolvimento.'}
+          Faça login com um usuário autenticado antes de registrar chegada de responsável, liberação em sala ou saída final.
         </div>
       ) : null}
 
@@ -854,9 +929,9 @@ export default function StudentCheckoutPage() {
         </div>
       ) : null}
 
-      {!realtimeEnabled ? (
+      {!realtimeEnabled && !lowEgressEnabled && !isDemoMode ? (
         <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Realtime indisponível neste modo. A sincronização automática entre dispositivos depende do Supabase configurado; o fallback local fica restrito a desenvolvimento explícito.
+          Modo offline — sincronização automática entre dispositivos indisponível.
         </div>
       ) : null}
 
@@ -924,14 +999,14 @@ export default function StudentCheckoutPage() {
             <div className="flex gap-2">
               <button
                 type="button"
-                className={`flex-1 rounded-2xl px-4 py-4 text-sm font-semibold ${layoutMode === 'list' ? 'bg-sky-700 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
+                className={`rounded-full px-3 py-2 text-xs font-semibold ${layoutMode === 'list' ? 'bg-sky-700 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
                 onClick={() => setLayoutMode('list')}
               >
                 Lista
               </button>
               <button
                 type="button"
-                className={`flex-1 rounded-2xl px-4 py-4 text-sm font-semibold ${layoutMode === 'cards' ? 'bg-sky-700 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
+                className={`rounded-full px-3 py-2 text-xs font-semibold ${layoutMode === 'cards' ? 'bg-sky-700 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
                 onClick={() => setLayoutMode('cards')}
               >
                 Cards
@@ -940,15 +1015,6 @@ export default function StudentCheckoutPage() {
           </div>
         </div>
         <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
-          <div className="min-w-[180px] flex-1 sm:max-w-[260px]">
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Dispositivo</label>
-            <input
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm shadow-sm placeholder:text-slate-400"
-              placeholder="Ex.: Portaria Infantil 1"
-              value={deviceLabel}
-              onChange={(event) => setDeviceLabel(event.target.value)}
-            />
-          </div>
           <div className="flex items-center gap-2">
             <button type="button" className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50" onClick={() => void loadData({ force: true })}>
               <RefreshCw className="h-3.5 w-3.5" />
@@ -972,12 +1038,12 @@ export default function StudentCheckoutPage() {
           <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
             {recentlyCalledStudents.map((item) => (
               <button
-                key={`${item.student_id}-${item.student_name}`}
+                key={`${item.student_id}-${item.display_name || item.student_name}`}
                 type="button"
                 className="whitespace-nowrap rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900"
                 onClick={() => openStudentDetails(item.student_id)}
               >
-                {item.full_name || item.student_name || 'Sem nome'}
+                {item.display_name || item.full_name || item.student_name || 'Sem nome'}
               </button>
             ))}
           </div>
@@ -1009,7 +1075,8 @@ export default function StudentCheckoutPage() {
                 setAuthorizedByByStudent={setAuthorizedByByStudent}
                 onOpenProfile={() => openStudentDetails(row.student_id)}
                 highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
-                readOnly={mutationsLocked || submitting}
+                readOnly={mutationsLocked || busyStudentIds.has(Number(row.student_id))}
+                busy={busyStudentIds.has(Number(row.student_id))}
                 actions={[
                   {
                     label: 'Chamar',
@@ -1042,7 +1109,8 @@ export default function StudentCheckoutPage() {
                 setAuthorizedByByStudent={setAuthorizedByByStudent}
                 onOpenProfile={() => openStudentDetails(row.student_id)}
                 highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
-                readOnly={mutationsLocked || submitting}
+                readOnly={mutationsLocked || busyStudentIds.has(Number(row.student_id))}
+                busy={busyStudentIds.has(Number(row.student_id))}
                 actions={[
                   {
                     label: 'Chamar',
@@ -1087,7 +1155,8 @@ export default function StudentCheckoutPage() {
                 onOpenProfile={() => openStudentDetails(row.student_id)}
                 highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
                 compactReceptionFields
-                readOnly={mutationsLocked || submitting}
+                readOnly={mutationsLocked || busyStudentIds.has(Number(row.student_id))}
+                busy={busyStudentIds.has(Number(row.student_id))}
                 actions={[
                   {
                     label: 'Preparar liberação',
@@ -1121,7 +1190,8 @@ export default function StudentCheckoutPage() {
                 onOpenProfile={() => openStudentDetails(row.student_id)}
                 highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
                 compactReceptionFields
-                readOnly={mutationsLocked || submitting}
+                readOnly={mutationsLocked || busyStudentIds.has(Number(row.student_id))}
+                busy={busyStudentIds.has(Number(row.student_id))}
                 actions={[
                   {
                     label: 'Preparar liberação',
@@ -1228,6 +1298,7 @@ export default function StudentCheckoutPage() {
                 setTo={setStudentLogTo}
                 hasMore={studentLogsHasMore}
                 onLoadMore={() => void loadStudentLogs({ reset: false })}
+                onRequestHistory={() => void loadStudentLogs({ reset: true, force: true })}
               />
             ) : null}
           </div>
@@ -1249,6 +1320,7 @@ export default function StudentCheckoutPage() {
             setTo={setStudentLogTo}
             hasMore={studentLogsHasMore}
             onLoadMore={() => void loadStudentLogs({ reset: false })}
+            onRequestHistory={() => void loadStudentLogs({ reset: true, force: true })}
           />
         </section>
       ) : null}
@@ -1278,7 +1350,9 @@ export default function StudentCheckoutPage() {
           setManualPickupByStudent={setManualPickupByStudent}
           authorizedByByStudent={authorizedByByStudent}
           setAuthorizedByByStudent={setAuthorizedByByStudent}
-          readOnly={mutationsLocked || submitting}
+          readOnly={mutationsLocked}
+          actionBusy={selectedStudentBusy}
+          onRequestHistory={() => void loadStudentLogs({ reset: true, force: true })}
         />
       ) : null}
 
@@ -1346,7 +1420,7 @@ function GuardianPickDialog({ row, open, onClose, onPick }) {
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Selecione quem chegou</p>
-            <h3 className="mt-1 text-lg font-extrabold text-slate-900">{row.full_name}</h3>
+            <h3 className="mt-1 text-lg font-extrabold text-slate-900">{row.display_name || row.full_name}</h3>
             <p className="text-sm text-slate-500">{row.class_name}</p>
           </div>
           <button
@@ -1435,16 +1509,24 @@ function StudentProfilePanel({
   setManualPickupByStudent = null,
   authorizedByByStudent = {},
   setAuthorizedByByStudent = null,
+  onRequestHistory = null,
+  actionBusy = false,
 }) {
-  const [logsOpen, setLogsOpen] = useState(!showOperationalControls)
+  const [logsOpen, setLogsOpen] = useState(false)
   const pickupDisplayName = student?.pickup_guardian_name || student?.pickup_person_name || ''
   const showPickupControls = showOperationalControls && (mode === 'reception' || mode === 'support')
-  const studentDisplayName = student?.full_name || student?.student_name || 'Selecione um aluno'
+  const studentDisplayName = student?.display_name || student?.full_name || student?.student_name || 'Selecione um aluno'
   const selectedGuardianId = Number(pickupGuardianByStudent[student?.student_id] || 0)
+  const requestHistory = useEffectEvent(() => onRequestHistory?.())
 
   useEffect(() => {
-    setLogsOpen(!showOperationalControls)
-  }, [showOperationalControls, student?.student_id])
+    setLogsOpen(false)
+  }, [student?.student_id])
+
+  useEffect(() => {
+    if (!student || !logsOpen) return
+    requestHistory()
+  }, [student?.student_id, from, logsOpen, period, requestHistory, to])
 
   return (
     <aside className={`rounded-3xl border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
@@ -1494,7 +1576,7 @@ function StudentProfilePanel({
                     <button
                       key={item.id}
                       type="button"
-                      disabled={readOnly}
+                      disabled={readOnly || actionBusy}
                       className={`rounded-2xl px-4 py-3 text-left text-sm font-extrabold ${readOnly ? 'cursor-not-allowed bg-slate-100 text-slate-400' : selectedGuardianId === Number(item.id) ? 'bg-amber-200 text-amber-950 ring-2 ring-amber-400' : 'bg-amber-100 text-amber-900 hover:bg-amber-200'}`}
                       onClick={() => {
                         setPickupGuardianByStudent?.((current) => ({ ...current, [student.student_id]: String(item.id) }))
@@ -1513,7 +1595,7 @@ function StudentProfilePanel({
                 <div>
                   <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Outro responsável</label>
                   <input
-                    disabled={readOnly || !setManualPickupByStudent}
+                    disabled={readOnly || actionBusy || !setManualPickupByStudent}
                     className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
                     placeholder="Usar apenas se não estiver na lista"
                     value={manualPickupByStudent[student.student_id] || ''}
@@ -1523,7 +1605,7 @@ function StudentProfilePanel({
                 <div>
                   <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Autorizado por</label>
                   <input
-                    disabled={readOnly || !setAuthorizedByByStudent}
+                    disabled={readOnly || actionBusy || !setAuthorizedByByStudent}
                     className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
                     placeholder="Operador / coordenação"
                     value={authorizedByByStudent[student.student_id] || ''}
@@ -1539,7 +1621,7 @@ function StudentProfilePanel({
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Observação operacional</label>
               <textarea
                 rows={2}
-                disabled={readOnly || !setNotesByStudent}
+                disabled={readOnly || actionBusy || !setNotesByStudent}
                 className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
                 placeholder="Obrigatório quando houver verificação manual"
                 value={notesByStudent[student.student_id] || ''}
@@ -1554,7 +1636,7 @@ function StudentProfilePanel({
                 <button
                   key={action.label}
                   type="button"
-                  disabled={readOnly || action.disabled}
+                  disabled={readOnly || actionBusy || action.disabled}
                   className={`rounded-2xl px-4 py-4 text-sm font-extrabold ${readOnly || action.disabled ? 'cursor-not-allowed bg-slate-100 text-slate-400' : buttonTone(action.tone)}`}
                   onClick={action.onClick}
                 >
@@ -1612,10 +1694,9 @@ function StudentProfilePanel({
               ) : null}
 
               <div className="mt-4 space-y-2">
-                {loading && logs.length === 0 ? <LoadingRow text="Carregando histórico..." /> : null}
-                {loading && logs.length > 0 ? (
+                {loading ? (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-500">
-                    Atualizando histórico...
+                    Carregando histórico...
                   </div>
                 ) : null}
                 {!loading && logs.length === 0 ? (
@@ -1683,6 +1764,8 @@ function StudentDetailsModal({
   authorizedByByStudent,
   setAuthorizedByByStudent,
   readOnly,
+  actionBusy = false,
+  onRequestHistory = null,
 }) {
   useEffect(() => {
     if (!student) return undefined
@@ -1738,6 +1821,8 @@ function StudentDetailsModal({
           setManualPickupByStudent={setManualPickupByStudent}
           authorizedByByStudent={authorizedByByStudent}
           setAuthorizedByByStudent={setAuthorizedByByStudent}
+          onRequestHistory={onRequestHistory}
+          actionBusy={actionBusy}
         />
       </div>
     </div>
@@ -1759,6 +1844,7 @@ const StudentCard = memo(function StudentCard({
   highlight = false,
   compactReceptionFields = false,
   readOnly = false,
+  busy = false,
 }) {
   const visibleActions = actions.filter((action) => !action.hidden)
   const pickupDisplayName = row.pickup_guardian_name || row.pickup_person_name || ''
@@ -1767,7 +1853,7 @@ const StudentCard = memo(function StudentCard({
     <article className={`rounded-3xl border bg-white p-4 shadow-sm transition-all duration-200 ${highlight ? 'border-amber-300 bg-amber-50/50 ring-2 ring-amber-200' : 'border-slate-200'}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="break-words text-lg font-extrabold text-slate-900">{row.full_name}</p>
+            <p className="break-words text-lg font-extrabold text-slate-900">{row.display_name || row.full_name}</p>
           <p className="break-words text-sm text-slate-500">{row.class_name} • {row.campus}</p>
           <p className="break-words text-sm text-slate-500">{row.family_name}</p>
         </div>
@@ -1832,7 +1918,7 @@ const StudentCard = memo(function StudentCard({
           <div>
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Responsável identificado</label>
             <select
-              disabled={readOnly}
+              disabled={readOnly || busy}
               className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
               value={pickupGuardianByStudent[row.student_id] || ''}
               onChange={(event) => setPickupGuardianByStudent((current) => ({ ...current, [row.student_id]: event.target.value }))}
@@ -1846,7 +1932,7 @@ const StudentCard = memo(function StudentCard({
           <div>
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Ou informe outro nome</label>
             <input
-              disabled={readOnly}
+              disabled={readOnly || busy}
               className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
               placeholder="Usar quando não estiver na lista"
               value={manualPickupByStudent[row.student_id] || ''}
@@ -1856,7 +1942,7 @@ const StudentCard = memo(function StudentCard({
           <div>
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Autorizado por</label>
             <input
-              disabled={readOnly}
+              disabled={readOnly || busy}
               className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
               placeholder="Operador / coordenação"
               value={authorizedByByStudent[row.student_id] || ''}
@@ -1870,7 +1956,7 @@ const StudentCard = memo(function StudentCard({
         <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Observação operacional</label>
         <textarea
           rows={2}
-          disabled={readOnly}
+          disabled={readOnly || busy}
           className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
           placeholder="Obrigatório quando houver verificação manual"
           value={notesByStudent[row.student_id] || ''}
@@ -1884,8 +1970,8 @@ const StudentCard = memo(function StudentCard({
             <button
               key={action.label}
               type="button"
-              disabled={readOnly}
-              className={`rounded-2xl px-4 py-4 text-sm font-extrabold ${readOnly ? 'cursor-not-allowed bg-slate-100 text-slate-400' : buttonTone(action.tone)}`}
+              disabled={readOnly || busy}
+              className={`rounded-2xl px-4 py-4 text-sm font-extrabold ${readOnly || busy ? 'cursor-not-allowed bg-slate-100 text-slate-400' : buttonTone(action.tone)}`}
               onClick={action.onClick}
             >
               {action.label}
@@ -1932,10 +2018,11 @@ const CheckoutQueueRow = memo(function CheckoutQueueRow({
   highlight = false,
   compactReceptionFields = false,
   readOnly = false,
+  busy = false,
 }) {
   const visibleActions = actions.filter((action) => !action.hidden)
   const primaryAction = visibleActions[0] || null
-  const studentDisplayName = row.full_name || row.student_name || 'Sem nome'
+  const studentDisplayName = row.display_name || row.full_name || row.student_name || 'Sem nome'
   const pickupDisplayName = row.pickup_guardian_name || row.pickup_person_name || ''
 
   return (
@@ -1982,8 +2069,8 @@ const CheckoutQueueRow = memo(function CheckoutQueueRow({
         {primaryAction ? (
           <button
             type="button"
-            disabled={readOnly}
-            className={`w-full rounded-2xl px-4 py-3 text-sm font-extrabold sm:w-auto ${readOnly ? 'cursor-not-allowed bg-slate-100 text-slate-400' : buttonTone(primaryAction.tone)}`}
+          disabled={readOnly || busy}
+            className={`w-full rounded-2xl px-4 py-3 text-sm font-extrabold sm:w-auto ${readOnly || busy ? 'cursor-not-allowed bg-slate-100 text-slate-400' : buttonTone(primaryAction.tone)}`}
             onClick={(event) => {
               event.stopPropagation()
               primaryAction.onClick()

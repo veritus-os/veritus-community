@@ -1,8 +1,9 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { hasSupabaseConfig, supabase } from '../../lib/supabaseClient'
+import { hasSupabaseConfig, isLocalCheckoutMode, supabase } from '../../lib/supabaseClient'
 import { normalizeRoleInput } from './permissions'
 import { schoolCrudService } from '../services/repositoryRegistry'
+import { localLogin, localLogout, clearLocalToken } from '../services/localCheckoutApiClient'
 
 const STORAGE_ROLE_KEY = 'cav_os_user_role'
 const STORAGE_MODE_KEY = 'cav_os_access_mode'
@@ -168,6 +169,16 @@ export function RoleProvider({ children }) {
           throw new Error('Informe e-mail e senha para entrar.')
         }
 
+        if (isLocalCheckoutMode) {
+          const session = await localLogin(email, password)
+          const localRole = normalizeRole(session.role)
+          setModeState('real')
+          setRoleState(localRole)
+          setUser({ id: session.id, email: session.email, full_name: session.full_name })
+          setAuthBusy(false)
+          return
+        }
+
         if (hasSupabaseConfig && supabase) {
           const { data, error } = await supabase.auth.signInWithPassword({ email, password })
           if (error) throw error
@@ -200,9 +211,12 @@ export function RoleProvider({ children }) {
         setAuthBusy(false)
       },
       signOut: async () => {
-        if (hasSupabaseConfig && supabase) {
+        if (isLocalCheckoutMode) {
+          await localLogout()
+        } else if (hasSupabaseConfig && supabase) {
           await supabase.auth.signOut()
         }
+        clearLocalToken()
         setModeState('real')
         setUser(null)
         setAuthBusy(false)
