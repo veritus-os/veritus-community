@@ -170,8 +170,30 @@ export function RoleProvider({ children }) {
           throw new Error('Informe e-mail e senha para entrar.')
         }
 
+        const emailLower = String(email).toLowerCase().trim()
+
+        // Route 1: Secretaria/search users → Veritus API (local Postgres)
+        const isVeritusUser = ['aleff@cav.local', 'patricia@cav.local', 'gisele@cav.local', 'sirley@cav.local'].includes(emailLower)
+        if (isVeritusUser) {
+          try {
+            const apiUser = await veritusApi.login(emailLower, password)
+            const apiRole = normalizeRole(apiUser.role)
+            setModeState('real')
+            setRoleState(apiRole)
+            setUser({ id: apiUser.id, email: apiUser.email, full_name: apiUser.full_name })
+            setAuthBusy(false)
+            return
+          } catch (err) {
+            if (err.message?.includes('HTTP')) {
+              throw new Error('Sistema de pesquisa indisponível. Verifique se o servidor local está ligado.')
+            }
+            throw err
+          }
+        }
+
+        // Route 2: Local checkout mode → local checkout server
         if (isLocalCheckoutMode) {
-          const session = await localLogin(email, password)
+          const session = await localLogin(emailLower, password)
           const localRole = normalizeRole(session.role)
           setModeState('real')
           setRoleState(localRole)
@@ -180,8 +202,9 @@ export function RoleProvider({ children }) {
           return
         }
 
+        // Route 3: Supabase auth (checkout users via Supabase)
         if (hasSupabaseConfig && supabase) {
-          const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+          const { data, error } = await supabase.auth.signInWithPassword({ email: emailLower, password })
           if (error) throw error
           const authUser = data.user
           const authRole = normalizeRole(
@@ -200,27 +223,18 @@ export function RoleProvider({ children }) {
           return
         }
 
-        // Try local API server first (VeritusOS backend)
+        // Route 4: Fallback — try Veritus API for any email
         try {
-          const apiUser = await veritusApi.login(email, password)
+          const apiUser = await veritusApi.login(emailLower, password)
           const apiRole = normalizeRole(apiUser.role)
           setModeState('real')
           setRoleState(apiRole)
           setUser({ id: apiUser.id, email: apiUser.email, full_name: apiUser.full_name })
           setAuthBusy(false)
           return
-        } catch { /* API not available, try local employee DB */ }
+        } catch { /* not available */ }
 
-        const employees = await schoolCrudService.listEmployees()
-        const account = employees.find((item) => String(item.email || '').toLowerCase() === String(email).toLowerCase())
-        if (!account) {
-          throw new Error('Conta não encontrada.')
-        }
-        const localRole = normalizeRole(account.access_type)
-        setModeState('real')
-        setRoleState(localRole)
-        setUser({ id: `mock-${account.id}`, email: account.email, full_name: account.full_name })
-        setAuthBusy(false)
+        throw new Error('Credenciais inválidas.')
       },
       signOut: async () => {
         if (isLocalCheckoutMode) {
