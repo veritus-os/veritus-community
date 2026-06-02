@@ -5,9 +5,10 @@ import {
   ChevronRight, Phone, Mail, AlertTriangle, Edit3, Loader2,
   LayoutGrid, UserCircle, BookOpen, ArrowLeft, Plus, Download,
   Trash2, Save, StarOff, PanelLeftClose, PanelLeftOpen,
-  ChevronDown, Settings, LogOut, Shield,
+  ChevronDown, Settings, LogOut, Shield, Sun, Moon,
 } from 'lucide-react'
 import * as api from '../core/services/veritusApiClient'
+import { getTheme, toggleTheme } from '../core/config/theme'
 
 // ============================================================
 // Constants
@@ -46,6 +47,7 @@ export default function SearchPage() {
     return stored !== 'collapsed'
   })
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [theme, setThemeState] = useState(getTheme)
   const debounceRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -153,28 +155,28 @@ export default function SearchPage() {
   if (showAdmin) return <AdminUsersView onBack={() => setShowAdmin(false)} />
 
   return (
-    <div className="flex h-screen bg-stone-100/60">
+    <div className="flex h-screen bg-stone-100/60 dark:bg-slate-900">
       {/* Sidebar */}
-      <aside className={`hidden flex-shrink-0 border-r border-stone-200 bg-stone-50 md:flex md:flex-col transition-all ${sidebarOpen ? 'w-64' : 'w-12'}`}>
+      <aside className={`hidden flex-shrink-0 border-r border-stone-200 dark:border-slate-700 bg-stone-50 dark:bg-slate-800 md:flex md:flex-col transition-all ${sidebarOpen ? 'w-64' : 'w-12'}`}>
         {sidebarOpen ? (
           <>
-            <div className="flex items-center justify-between border-b border-stone-200 px-3 py-2.5">
+            <div className="flex items-center justify-between border-b border-stone-200 dark:border-slate-700 px-3 py-2.5">
               <button type="button" onClick={goHome} title="Voltar para início" className="text-left transition hover:opacity-80 cursor-pointer">
-                <p className="text-xs font-bold uppercase tracking-widest text-sky-700">VeritusOS</p>
-                <p className="text-[10px] text-stone-500">Colégio Alta Vista</p>
+                <p className="text-xs font-bold uppercase tracking-widest text-sky-700 dark:text-sky-400">VeritusOS</p>
+                <p className="text-[10px] text-stone-500 dark:text-slate-400">Colégio Alta Vista</p>
               </button>
-              <button type="button" onClick={toggleSidebar} title="Recolher" className="rounded-lg p-1 text-stone-400 hover:bg-stone-200 hover:text-stone-600">
+              <button type="button" onClick={toggleSidebar} title="Recolher" className="rounded-lg p-1 text-stone-400 hover:bg-stone-200 dark:hover:bg-slate-700 hover:text-stone-600 dark:hover:text-slate-300">
                 <PanelLeftClose className="h-4 w-4" />
               </button>
             </div>
             <div className="flex-1 overflow-y-auto px-3 py-3">
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-stone-400">Pesquisas recentes</p>
-              {history.length === 0 && <p className="text-xs text-stone-400 italic">Nenhuma pesquisa ainda</p>}
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-stone-400 dark:text-slate-500">Pesquisas recentes</p>
+              {history.length === 0 && <p className="text-xs text-stone-400 dark:text-slate-500 italic">Nenhuma pesquisa ainda</p>}
               {history.slice(0, HISTORY_LIMIT).map((h) => (
                 <div key={h.id || h.query} className="group mb-0.5 flex items-center">
                   <button type="button" onClick={() => handleHistoryClick(h.query)}
-                    className="flex flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-stone-700 transition hover:bg-stone-200/70">
-                    <Clock className="h-3.5 w-3.5 flex-shrink-0 text-stone-400" />
+                    className="flex flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-stone-700 dark:text-slate-300 transition hover:bg-stone-200/70 dark:hover:bg-slate-700">
+                    <Clock className="h-3.5 w-3.5 flex-shrink-0 text-stone-400 dark:text-slate-500" />
                     <span className="truncate">{h.query}</span>
                   </button>
                   {h.id && (
@@ -222,12 +224,12 @@ export default function SearchPage() {
       {/* Main content */}
       <main className="flex flex-1 flex-col overflow-y-auto">
         {/* Header */}
-        <header className="flex items-center justify-between border-b border-stone-200 bg-white/80 backdrop-blur px-4 py-2.5 md:px-6">
+        <header className="flex items-center justify-between border-b border-stone-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 backdrop-blur px-4 py-2.5 md:px-6">
           <div className="flex items-center gap-3">
-            <button type="button" className="md:hidden rounded-lg p-1.5 hover:bg-stone-100" onClick={toggleSidebar}>
-              <LayoutGrid className="h-5 w-5 text-stone-600" />
+            <button type="button" className="md:hidden rounded-lg p-1.5 hover:bg-stone-100 dark:hover:bg-slate-700" onClick={toggleSidebar}>
+              <LayoutGrid className="h-5 w-5 text-stone-600 dark:text-slate-300" />
             </button>
-            <button type="button" onClick={goHome} title="Voltar para início" className="text-sm font-bold text-stone-800 hover:text-sky-700 transition cursor-pointer">Pesquisa</button>
+            <button type="button" onClick={goHome} title="Voltar para início" className="text-sm font-bold text-stone-800 dark:text-slate-200 hover:text-sky-700 dark:hover:text-sky-400 transition cursor-pointer">Pesquisa</button>
           </div>
           <div className="flex items-center gap-2">
             {canEdit && (
@@ -239,25 +241,30 @@ export default function SearchPage() {
             {/* User menu */}
             <div className="relative">
               <button type="button" onClick={() => setUserMenuOpen(!userMenuOpen)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs text-stone-700 hover:bg-stone-50 transition">
-                <UserCircle className="h-4 w-4 text-stone-400" />
+                className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-2.5 py-1.5 text-xs text-stone-700 dark:text-slate-200 hover:bg-stone-50 dark:hover:bg-slate-600 transition">
+                <UserCircle className="h-4 w-4 text-stone-400 dark:text-slate-400" />
                 <span className="hidden sm:inline font-medium">{user?.full_name}</span>
-                <ChevronDown className="h-3 w-3 text-stone-400" />
+                <ChevronDown className="h-3 w-3 text-stone-400 dark:text-slate-400" />
               </button>
               {userMenuOpen && (
-                <div className="absolute right-0 top-full mt-1 w-56 rounded-xl border border-stone-200 bg-white py-1 shadow-lg z-50" onMouseLeave={() => setUserMenuOpen(false)}>
-                  <div className="px-3 py-2 border-b border-stone-100">
-                    <p className="text-sm font-semibold text-stone-800">{user?.full_name}</p>
-                    <p className="text-[10px] text-stone-500 capitalize">{user?.role}</p>
+                <div className="absolute right-0 top-full mt-1 w-56 rounded-xl border border-stone-200 dark:border-slate-600 bg-white dark:bg-slate-800 py-1 shadow-lg z-50" onMouseLeave={() => setUserMenuOpen(false)}>
+                  <div className="px-3 py-2 border-b border-stone-100 dark:border-slate-700">
+                    <p className="text-sm font-semibold text-stone-800 dark:text-slate-200">{user?.full_name}</p>
+                    <p className="text-[10px] text-stone-500 dark:text-slate-400 capitalize">{user?.role}</p>
                   </div>
+                  <button type="button" onClick={() => { const t = toggleTheme(); setThemeState(t) }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-stone-700 dark:text-slate-300 hover:bg-stone-50 dark:hover:bg-slate-700">
+                    {theme === 'dark' ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4 text-slate-400" />}
+                    {theme === 'dark' ? 'Modo claro' : 'Modo escuro'}
+                  </button>
                   {user?.role === 'admin' && (
                     <button type="button" onClick={() => { setUserMenuOpen(false); setShowAdmin(true) }}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-stone-700 hover:bg-stone-50">
-                      <Shield className="h-4 w-4 text-stone-400" /> Gerenciar usuários
+                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-stone-700 dark:text-slate-300 hover:bg-stone-50 dark:hover:bg-slate-700">
+                      <Shield className="h-4 w-4 text-stone-400 dark:text-slate-400" /> Gerenciar usuários
                     </button>
                   )}
                   <button type="button" onClick={() => { setUserMenuOpen(false); api.logout(); navigate('/login') }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50">
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20">
                     <LogOut className="h-4 w-4" /> Sair
                   </button>
                 </div>
@@ -272,8 +279,8 @@ export default function SearchPage() {
           <div className={`mx-auto w-full ${!hasResults && !isEmpty ? 'max-w-2xl' : 'max-w-4xl'}`}>
             {!hasResults && !isEmpty && (
               <div className="mb-6 text-center">
-                <h2 className="text-2xl font-extrabold text-slate-800">Pesquisar no sistema</h2>
-                <p className="mt-1 text-sm text-slate-500">Busque por nome, turma, CPF, telefone ou e-mail</p>
+                <h2 className="text-2xl font-extrabold text-slate-800 dark:text-slate-100">Pesquisar no sistema</h2>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Busque por nome, turma, CPF, telefone ou e-mail</p>
               </div>
             )}
 
@@ -285,7 +292,7 @@ export default function SearchPage() {
                 value={query}
                 onChange={(e) => handleInputChange(e.target.value)}
                 placeholder="Pesquisar aluno, responsável, turma..."
-                className="w-full rounded-2xl border border-stone-200 bg-white py-3.5 pl-12 pr-12 text-base shadow-sm transition focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                className="w-full rounded-2xl border border-stone-200 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-slate-100 py-3.5 pl-12 pr-12 text-base shadow-sm transition focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100 dark:focus:ring-sky-900 dark:placeholder-slate-400"
               />
               {query && (
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1">
@@ -309,7 +316,7 @@ export default function SearchPage() {
               <div className="mt-6 flex flex-wrap justify-center gap-3">
                 {QUICK_ACTIONS.map(a => (
                   <button key={a.key} type="button" onClick={() => handleQuickAction(a)}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 hover:border-sky-200">
+                    className="inline-flex items-center gap-2 rounded-xl border border-stone-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm font-medium text-stone-700 dark:text-slate-300 shadow-sm transition hover:bg-stone-50 dark:hover:bg-slate-700 hover:border-sky-200 dark:hover:border-sky-600">
                     <a.icon className="h-4 w-4 text-sky-600" />
                     {a.label}
                   </button>
@@ -373,13 +380,13 @@ function ResultGroup({ title, icon: Icon, count, children }) {
 const StudentResultCard = memo(function StudentResultCard({ student, onClick }) {
   return (
     <button type="button" onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-3 text-left transition hover:border-sky-200 hover:bg-sky-50/50">
-      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-100 text-sky-700">
+      className="flex w-full items-center gap-3 rounded-xl border border-stone-100 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3 text-left transition hover:border-sky-200 dark:hover:border-sky-600 hover:bg-sky-50/50 dark:hover:bg-slate-700">
+      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-400">
         <GraduationCap className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-slate-800">{student.full_name}</p>
-        <p className="truncate text-xs text-slate-500">{student.class_name || 'Sem turma'} • {student.segment === 'infantil' ? 'Ed. Infantil' : 'Ens. Fundamental'}</p>
+        <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-200">{student.full_name}</p>
+        <p className="truncate text-xs text-slate-500 dark:text-slate-400">{student.class_name || 'Sem turma'} • {student.segment === 'infantil' ? 'Ed. Infantil' : 'Ens. Fundamental'}</p>
       </div>
       {student.allergies && <AlertTriangle className="h-4 w-4 flex-shrink-0 text-amber-500" title="Alergia" />}
       <ChevronRight className="h-4 w-4 flex-shrink-0 text-slate-300" />
@@ -439,8 +446,8 @@ function StudentProfile({ studentId, onBack, canEdit, user }) {
     } finally { setSaving(false) }
   }
 
-  if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-sky-500" /></div>
-  if (!data?.student) return <div className="p-8 text-center text-slate-500">Aluno não encontrado.</div>
+  if (loading) return <div className="flex h-screen items-center justify-center bg-stone-100/60 dark:bg-slate-900"><Loader2 className="h-8 w-8 animate-spin text-sky-500" /></div>
+  if (!data?.student) return <div className="p-8 text-center text-slate-500 dark:text-slate-400 bg-stone-100/60 dark:bg-slate-900 min-h-screen">Aluno não encontrado.</div>
 
   const s = data.student
   const guardians = data.guardians || []
@@ -454,14 +461,14 @@ function StudentProfile({ studentId, onBack, canEdit, user }) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 md:px-6">
-        <button type="button" onClick={onBack} className="rounded-lg p-1.5 hover:bg-slate-100">
-          <ArrowLeft className="h-5 w-5 text-slate-600" />
+    <div className="min-h-screen bg-stone-100/60 dark:bg-slate-900">
+      <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-stone-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 backdrop-blur px-4 py-3 md:px-6">
+        <button type="button" onClick={onBack} className="rounded-lg p-1.5 hover:bg-stone-100 dark:hover:bg-slate-700">
+          <ArrowLeft className="h-5 w-5 text-stone-600 dark:text-slate-300" />
         </button>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-base font-bold text-slate-800">{s.full_name}</h1>
-          <p className="text-xs text-slate-500">{s.class_name} • {s.segment === 'infantil' ? 'Ed. Infantil' : 'Ens. Fundamental'}</p>
+          <h1 className="truncate text-base font-bold text-slate-800 dark:text-slate-100">{s.full_name}</h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">{s.class_name} • {s.segment === 'infantil' ? 'Ed. Infantil' : 'Ens. Fundamental'}</p>
         </div>
         {canEdit && !editing && (
           <button type="button" onClick={() => { setEditing(true); setEditFields({ allergies: s.allergies || '', notes: s.notes || '', phone: s.phone || '' }) }}
@@ -474,7 +481,7 @@ function StudentProfile({ studentId, onBack, canEdit, user }) {
 
       <div className="mx-auto max-w-3xl px-4 py-5 md:px-6 space-y-5">
         {/* Student info */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-2xl border border-stone-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm">
           <h2 className="mb-3 text-sm font-bold text-slate-700">Dados do Aluno</h2>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Nome completo" value={s.full_name} />
@@ -515,7 +522,7 @@ function StudentProfile({ studentId, onBack, canEdit, user }) {
 
         {/* Guardians */}
         {guardians.length > 0 && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <section className="rounded-2xl border border-stone-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm">
             <h2 className="mb-3 text-sm font-bold text-slate-700">Responsáveis ({guardians.length})</h2>
             <div className="space-y-3">
               {guardians.map(g => (
@@ -539,7 +546,7 @@ function StudentProfile({ studentId, onBack, canEdit, user }) {
 
         {/* Meal subscriptions */}
         {meals.length > 0 && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <section className="rounded-2xl border border-stone-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm">
             <h2 className="mb-3 text-sm font-bold text-slate-700">Alimentação</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -626,7 +633,7 @@ function MealReportView({ onBack }) {
       </header>
 
       <div className="mx-auto max-w-3xl px-4 py-5 md:px-6">
-        <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="overflow-x-auto rounded-2xl border border-stone-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm">
           <h2 className="mb-3 text-sm font-bold text-slate-700">Serviços por dia da semana</h2>
           <table className="w-full text-sm">
             <thead>
@@ -750,7 +757,7 @@ function EnrollmentForm({ onBack, user }) {
       <form onSubmit={handleSubmit} className="mx-auto max-w-2xl px-4 py-5 md:px-6 space-y-5">
         {error && <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-2xl border border-stone-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm">
           <h2 className="mb-4 text-sm font-bold text-slate-700">Dados do Aluno</h2>
           <div className="grid gap-3 sm:grid-cols-2">
             <FormField label="Nome completo *" value={student.full_name} onChange={v => setStudent(p => ({...p, full_name: v}))} required />
@@ -777,7 +784,7 @@ function EnrollmentForm({ onBack, user }) {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-2xl border border-stone-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm">
           <h2 className="mb-4 text-sm font-bold text-slate-700">Responsável Principal</h2>
           <div className="grid gap-3 sm:grid-cols-2">
             <FormField label="Nome completo *" value={responsible.full_name} onChange={v => setResponsible(p => ({...p, full_name: v}))} required />
@@ -883,13 +890,19 @@ function AdminUsersView({ onBack }) {
 
   async function handleCreate(e) {
     e.preventDefault(); setSaving(true); setMsg('')
+    if (!form.full_name.trim() || !form.email.trim() || !form.password) {
+      setMsg('Preencha todos os campos obrigatórios.'); setSaving(false); return
+    }
+    if (form.password.length < 8) {
+      setMsg('Senha deve ter pelo menos 8 caracteres.'); setSaving(false); return
+    }
     try {
       await api.createStaffUser(form)
       setForm({ full_name: '', email: '', password: '', role: 'secretaria' })
       setShowCreate(false)
       await loadUsers()
-      setMsg('Usuário criado.')
-    } catch (err) { setMsg(err.message) }
+      setMsg('Usuário criado com sucesso.')
+    } catch (err) { setMsg(err.message || 'Erro ao criar usuário.') }
     setSaving(false)
   }
 

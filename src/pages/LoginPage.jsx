@@ -35,19 +35,19 @@ export default function LoginPage() {
   const isSearch = mod.id === 'search'
 
   return (
-    <div className={`flex min-h-screen items-center justify-center px-4 py-8 ${isCheckout ? 'bg-gradient-to-br from-emerald-50 to-slate-100' : isSearch ? 'bg-gradient-to-br from-indigo-50 to-slate-100' : 'bg-gradient-to-br from-sky-50 to-slate-100'}`}>
+    <div className={`flex min-h-screen items-center justify-center px-4 py-8 ${isCheckout ? 'bg-gradient-to-br from-emerald-50 to-slate-100 dark:from-slate-900 dark:to-slate-800' : isSearch ? 'bg-gradient-to-br from-indigo-50 to-slate-100 dark:from-slate-900 dark:to-slate-800' : 'bg-gradient-to-br from-sky-50 to-slate-100 dark:from-slate-900 dark:to-slate-800'}`}>
       <div className="w-full max-w-md">
         <div className="mb-6 text-center">
           <div className={`mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg ${isCheckout ? 'bg-emerald-700' : isSearch ? 'bg-indigo-700' : 'bg-sky-700'}`}>
             {isSearch ? <Search className="h-7 w-7 text-white" /> : <LayoutDashboard className="h-7 w-7 text-white" />}
           </div>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">Colégio Alta Vista</p>
-          <h1 className="mt-1 text-2xl font-extrabold text-slate-900">{mod.shortTitle}</h1>
-          <p className="mt-1 text-sm text-slate-500">{mod.loginSubtitle}</p>
+          <h1 className="mt-1 text-2xl font-extrabold text-slate-900 dark:text-slate-100">{mod.shortTitle}</h1>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{mod.loginSubtitle}</p>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="mb-4 text-sm text-slate-600">
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-6 shadow-sm">
+          <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
             Use seu e-mail e senha para acessar.
           </p>
 
@@ -90,10 +90,10 @@ export default function LoginPage() {
 
 function Field({ label, type, value, onChange }) {
   return (
-    <label className="block text-sm text-slate-700">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+    <label className="block text-sm text-slate-700 dark:text-slate-300">
+      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</span>
       <input type={type} value={value} onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm transition focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400" />
+        className="w-full rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm transition focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400" />
     </label>
   )
 }
