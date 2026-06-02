@@ -110,6 +110,17 @@ export default function SearchPage() {
     inputRef.current?.focus()
   }
 
+  function goHome() {
+    setSelectedStudent(null)
+    setShowMealReport(false)
+    setShowClassList(false)
+    setShowEnrollment(false)
+    setShowActiveList(false)
+    setQuery('')
+    setResults(null)
+    setTimeout(() => inputRef.current?.focus(), 50)
+  }
+
   const hasResults = results && (results.students?.length || results.guardians?.length)
   const isEmpty = results && !hasResults && query.length >= 2
 
@@ -125,10 +136,10 @@ export default function SearchPage() {
       {/* Sidebar */}
       {sidebarOpen && (
         <aside className="hidden w-64 flex-shrink-0 border-r border-slate-200 bg-white md:flex md:flex-col">
-          <div className="border-b border-slate-100 px-4 py-3">
+          <button type="button" onClick={goHome} title="Voltar para início" className="w-full border-b border-slate-100 px-4 py-3 text-left transition hover:bg-slate-50 cursor-pointer">
             <p className="text-xs font-bold uppercase tracking-widest text-sky-700">VeritusOS</p>
             <p className="text-[10px] text-slate-500">Colégio Alta Vista</p>
-          </div>
+          </button>
           <div className="flex-1 overflow-y-auto px-3 py-3">
             <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Pesquisas recentes</p>
             {history.length === 0 && <p className="text-xs text-slate-400 italic">Nenhuma pesquisa ainda</p>}
@@ -173,7 +184,7 @@ export default function SearchPage() {
             <button type="button" className="md:hidden rounded-lg p-1.5 hover:bg-slate-100" onClick={() => setSidebarOpen(!sidebarOpen)}>
               <LayoutGrid className="h-5 w-5 text-slate-600" />
             </button>
-            <h1 className="text-sm font-bold text-slate-800">Pesquisa</h1>
+            <button type="button" onClick={goHome} title="Voltar para início" className="text-sm font-bold text-slate-800 hover:text-sky-700 transition cursor-pointer">Pesquisa</button>
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-500">
             {canEdit && (
