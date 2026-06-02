@@ -136,6 +136,28 @@ export function getMealReportXlsxUrl() {
 }
 
 // ---------------------------------------------------------------------------
+// Search history
+// ---------------------------------------------------------------------------
+export async function deleteSearchHistoryItem(id) {
+  return request('DELETE', `/api/search/history/${id}`)
+}
+
+// ---------------------------------------------------------------------------
+// Admin: staff users
+// ---------------------------------------------------------------------------
+export async function listStaffUsers() {
+  return request('GET', '/api/admin/users')
+}
+
+export async function createStaffUser(data) {
+  return request('POST', '/api/admin/users', data)
+}
+
+export async function updateStaffUser(id, data) {
+  return request('PUT', `/api/admin/users/${id}`, data)
+}
+
+// ---------------------------------------------------------------------------
 // Health
 // ---------------------------------------------------------------------------
 export async function healthCheck() {

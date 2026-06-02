@@ -185,7 +185,7 @@ async function handle(req, res) {
     const user = requireAuth(req, res)
     if (!user) return
     const { rows } = await pool.query(
-      'SELECT DISTINCT ON (query) query, result_count, created_at FROM search_history WHERE user_id = $1 ORDER BY query, created_at DESC LIMIT 20',
+      'SELECT DISTINCT ON (query) id, query, result_count, created_at FROM search_history WHERE user_id = $1 ORDER BY query, created_at DESC LIMIT 20',
       [user.id])
     return json(res, 200, { history: rows }, req)
   }
@@ -560,6 +560,82 @@ async function handle(req, res) {
     const id = Number(path.split('/')[3])
     await pool.query('DELETE FROM saved_queries WHERE id = $1 AND user_id = $2', [id, user.id])
     return json(res, 200, { ok: true }, req)
+  }
+
+  // --- Delete search history item ---
+  if (method === 'DELETE' && path.startsWith('/api/search/history/')) {
+    const user = requireAuth(req, res)
+    if (!user) return
+    const id = Number(path.split('/')[4])
+    await pool.query('DELETE FROM search_history WHERE id = $1 AND user_id = $2', [id, user.id])
+    return json(res, 200, { ok: true }, req)
+  }
+
+  // --- Admin: list staff users ---
+  if (method === 'GET' && path === '/api/admin/users') {
+    const user = requireAuth(req, res)
+    if (!user || user.role !== 'admin') return json(res, 403, { error: 'Apenas administradores.' }, req)
+    const { rows } = await pool.query('SELECT id, full_name, email, role, active, created_at, updated_at FROM staff_users ORDER BY full_name')
+    return json(res, 200, { rows }, req)
+  }
+
+  // --- Admin: create staff user ---
+  if (method === 'POST' && path === '/api/admin/users') {
+    const user = requireAuth(req, res)
+    if (!user || user.role !== 'admin') return json(res, 403, { error: 'Apenas administradores.' }, req)
+    const body = await readBody(req)
+    if (!body.full_name?.trim()) return json(res, 400, { error: 'Nome é obrigatório.' }, req)
+    if (!body.email?.trim()) return json(res, 400, { error: 'E-mail é obrigatório.' }, req)
+    if (!body.password || body.password.length < 8) return json(res, 400, { error: 'Senha deve ter pelo menos 8 caracteres.' }, req)
+    const validRoles = ['admin', 'secretaria', 'support', 'readonly']
+    if (!validRoles.includes(body.role)) return json(res, 400, { error: `Perfil inválido. Use: ${validRoles.join(', ')}` }, req)
+
+    const existing = await pool.query('SELECT id FROM staff_users WHERE email = $1', [body.email.toLowerCase().trim()])
+    if (existing.rows.length) return json(res, 409, { error: 'E-mail já cadastrado.' }, req)
+
+    const hash = bcrypt.hashSync(body.password, 10)
+    const { rows } = await pool.query(
+      'INSERT INTO staff_users (full_name, email, password_hash, role) VALUES ($1,$2,$3,$4) RETURNING id, full_name, email, role, active',
+      [body.full_name.trim(), body.email.toLowerCase().trim(), hash, body.role])
+
+    await pool.query('INSERT INTO audit_logs (user_id, user_name, module, entity_type, entity_id, action, details) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [user.id, user.name, 'admin', 'staff_user', rows[0].id, 'create_user', JSON.stringify({ email: rows[0].email, role: rows[0].role })])
+
+    return json(res, 201, { user: rows[0] }, req)
+  }
+
+  // --- Admin: update staff user ---
+  if (method === 'PUT' && path.startsWith('/api/admin/users/')) {
+    const user = requireAuth(req, res)
+    if (!user || user.role !== 'admin') return json(res, 403, { error: 'Apenas administradores.' }, req)
+    const id = Number(path.split('/')[4])
+    const body = await readBody(req)
+
+    const changes = []
+    const vals = []
+    let idx = 1
+
+    if (body.full_name?.trim()) { changes.push(`full_name = $${idx}`); vals.push(body.full_name.trim()); idx++ }
+    if (body.role) {
+      const validRoles = ['admin', 'secretaria', 'support', 'readonly']
+      if (!validRoles.includes(body.role)) return json(res, 400, { error: 'Perfil inválido.' }, req)
+      changes.push(`role = $${idx}`); vals.push(body.role); idx++
+    }
+    if (typeof body.active === 'boolean') { changes.push(`active = $${idx}`); vals.push(body.active); idx++ }
+    if (body.password && body.password.length >= 8) {
+      changes.push(`password_hash = $${idx}`); vals.push(bcrypt.hashSync(body.password, 10)); idx++
+    }
+
+    if (!changes.length) return json(res, 400, { error: 'Nenhum campo para atualizar.' }, req)
+    changes.push(`updated_at = now()`)
+    vals.push(id)
+
+    await pool.query(`UPDATE staff_users SET ${changes.join(', ')} WHERE id = $${idx}`, vals)
+    await pool.query('INSERT INTO audit_logs (user_id, user_name, module, entity_type, entity_id, action, details) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [user.id, user.name, 'admin', 'staff_user', id, 'update_user', JSON.stringify({ changed: Object.keys(body).filter(k => k !== 'password') })])
+
+    const { rows } = await pool.query('SELECT id, full_name, email, role, active, created_at, updated_at FROM staff_users WHERE id = $1', [id])
+    return json(res, 200, { user: rows[0] }, req)
   }
 
   json(res, 404, { error: 'Endpoint não encontrado.' }, req)

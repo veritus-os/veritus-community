@@ -4,7 +4,8 @@ import {
   Search, X, Clock, Star, Users, GraduationCap, UtensilsCrossed,
   ChevronRight, Phone, Mail, AlertTriangle, Edit3, Loader2,
   LayoutGrid, UserCircle, BookOpen, ArrowLeft, Plus, Download,
-  Trash2, Save, StarOff,
+  Trash2, Save, StarOff, PanelLeftClose, PanelLeftOpen,
+  ChevronDown, Settings, LogOut, Shield,
 } from 'lucide-react'
 import * as api from '../core/services/veritusApiClient'
 
@@ -38,8 +39,13 @@ export default function SearchPage() {
   const [showClassList, setShowClassList] = useState(false)
   const [showEnrollment, setShowEnrollment] = useState(false)
   const [showActiveList, setShowActiveList] = useState(false)
+  const [showAdmin, setShowAdmin] = useState(false)
   const [savedQueries, setSavedQueries] = useState([])
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    const stored = localStorage.getItem('veritus_sidebar')
+    return stored !== 'collapsed'
+  })
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
   const debounceRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -104,6 +110,20 @@ export default function SearchPage() {
     setSavedQueries(d.rows || [])
   }
 
+  async function handleDeleteHistory(id) {
+    await api.deleteSearchHistoryItem(id)
+    const d = await api.getSearchHistory()
+    setHistory(d.history || [])
+  }
+
+  function toggleSidebar() {
+    setSidebarOpen(prev => {
+      const next = !prev
+      localStorage.setItem('veritus_sidebar', next ? 'open' : 'collapsed')
+      return next
+    })
+  }
+
   function clearSearch() {
     setQuery('')
     setResults(null)
@@ -130,72 +150,119 @@ export default function SearchPage() {
   if (showClassList) return <ClassListView onBack={() => setShowClassList(false)} onSelectClass={(cn) => { setShowClassList(false); setQuery(cn); runSearch(cn) }} />
   if (showEnrollment) return <EnrollmentForm onBack={() => setShowEnrollment(false)} user={user} />
   if (showActiveList) return <ActiveStudentsList onBack={() => setShowActiveList(false)} onSelect={(id) => { setShowActiveList(false); setSelectedStudent(id) }} />
+  if (showAdmin) return <AdminUsersView onBack={() => setShowAdmin(false)} />
 
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="flex h-screen bg-stone-100/60">
       {/* Sidebar */}
-      {sidebarOpen && (
-        <aside className="hidden w-64 flex-shrink-0 border-r border-slate-200 bg-white md:flex md:flex-col">
-          <button type="button" onClick={goHome} title="Voltar para início" className="w-full border-b border-slate-100 px-4 py-3 text-left transition hover:bg-slate-50 cursor-pointer">
-            <p className="text-xs font-bold uppercase tracking-widest text-sky-700">VeritusOS</p>
-            <p className="text-[10px] text-slate-500">Colégio Alta Vista</p>
-          </button>
-          <div className="flex-1 overflow-y-auto px-3 py-3">
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Pesquisas recentes</p>
-            {history.length === 0 && <p className="text-xs text-slate-400 italic">Nenhuma pesquisa ainda</p>}
-            {history.slice(0, HISTORY_LIMIT).map((h, i) => (
-              <button key={i} type="button" onClick={() => handleHistoryClick(h.query)}
-                className="mb-1 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-slate-700 transition hover:bg-slate-100">
-                <Clock className="h-3.5 w-3.5 flex-shrink-0 text-slate-400" />
-                <span className="truncate">{h.query}</span>
-                <span className="ml-auto text-[10px] text-slate-400">{h.result_count}</span>
+      <aside className={`hidden flex-shrink-0 border-r border-stone-200 bg-stone-50 md:flex md:flex-col transition-all ${sidebarOpen ? 'w-64' : 'w-12'}`}>
+        {sidebarOpen ? (
+          <>
+            <div className="flex items-center justify-between border-b border-stone-200 px-3 py-2.5">
+              <button type="button" onClick={goHome} title="Voltar para início" className="text-left transition hover:opacity-80 cursor-pointer">
+                <p className="text-xs font-bold uppercase tracking-widest text-sky-700">VeritusOS</p>
+                <p className="text-[10px] text-stone-500">Colégio Alta Vista</p>
               </button>
-            ))}
-          </div>
-          {savedQueries.length > 0 && (
-            <div className="border-t border-slate-100 px-3 py-3">
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Favoritos</p>
-              {savedQueries.map(sq => (
-                <div key={sq.id} className="mb-1 flex items-center gap-1">
-                  <button type="button" onClick={() => handleHistoryClick(sq.query)}
-                    className="flex flex-1 items-center gap-2 truncate rounded-lg px-2 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100">
-                    <Star className="h-3.5 w-3.5 flex-shrink-0 text-amber-400" />
-                    <span className="truncate">{sq.label}</span>
+              <button type="button" onClick={toggleSidebar} title="Recolher" className="rounded-lg p-1 text-stone-400 hover:bg-stone-200 hover:text-stone-600">
+                <PanelLeftClose className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 py-3">
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-stone-400">Pesquisas recentes</p>
+              {history.length === 0 && <p className="text-xs text-stone-400 italic">Nenhuma pesquisa ainda</p>}
+              {history.slice(0, HISTORY_LIMIT).map((h) => (
+                <div key={h.id || h.query} className="group mb-0.5 flex items-center">
+                  <button type="button" onClick={() => handleHistoryClick(h.query)}
+                    className="flex flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-stone-700 transition hover:bg-stone-200/70">
+                    <Clock className="h-3.5 w-3.5 flex-shrink-0 text-stone-400" />
+                    <span className="truncate">{h.query}</span>
                   </button>
-                  <button type="button" onClick={() => handleDeleteSaved(sq.id)} className="rounded p-1 text-slate-400 hover:text-rose-500">
-                    <X className="h-3 w-3" />
-                  </button>
+                  {h.id && (
+                    <button type="button" onClick={() => handleDeleteHistory(h.id)}
+                      className="rounded p-1 text-stone-300 opacity-0 transition group-hover:opacity-100 hover:text-rose-500">
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
-          )}
-          <div className="border-t border-slate-100 px-4 py-3">
-            <p className="truncate text-xs font-semibold text-slate-700">{user?.full_name}</p>
-            <p className="text-[10px] text-slate-500">{user?.role}</p>
+            {savedQueries.length > 0 && (
+              <div className="border-t border-stone-200 px-3 py-3">
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-stone-400">Favoritos</p>
+                {savedQueries.map(sq => (
+                  <div key={sq.id} className="mb-0.5 flex items-center gap-1">
+                    <button type="button" onClick={() => handleHistoryClick(sq.query)}
+                      className="flex flex-1 items-center gap-2 truncate rounded-lg px-2 py-1.5 text-left text-sm text-stone-700 hover:bg-stone-200/70">
+                      <Star className="h-3.5 w-3.5 flex-shrink-0 text-amber-400" />
+                      <span className="truncate">{sq.label}</span>
+                    </button>
+                    <button type="button" onClick={() => handleDeleteSaved(sq.id)} className="rounded p-1 text-stone-300 hover:text-rose-500">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="border-t border-stone-200 px-3 py-2.5 text-[10px] text-stone-400">
+              {user?.full_name} • {user?.role}
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-col items-center py-2 gap-2">
+            <button type="button" onClick={toggleSidebar} title="Expandir" className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-200 hover:text-stone-600">
+              <PanelLeftOpen className="h-4 w-4" />
+            </button>
+            <button type="button" onClick={goHome} title="Início" className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-200 hover:text-sky-600">
+              <Search className="h-4 w-4" />
+            </button>
           </div>
-        </aside>
-      )}
+        )}
+      </aside>
 
       {/* Main content */}
       <main className="flex flex-1 flex-col overflow-y-auto">
         {/* Header */}
-        <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2.5 md:px-6">
+        <header className="flex items-center justify-between border-b border-stone-200 bg-white/80 backdrop-blur px-4 py-2.5 md:px-6">
           <div className="flex items-center gap-3">
-            <button type="button" className="md:hidden rounded-lg p-1.5 hover:bg-slate-100" onClick={() => setSidebarOpen(!sidebarOpen)}>
-              <LayoutGrid className="h-5 w-5 text-slate-600" />
+            <button type="button" className="md:hidden rounded-lg p-1.5 hover:bg-stone-100" onClick={toggleSidebar}>
+              <LayoutGrid className="h-5 w-5 text-stone-600" />
             </button>
-            <button type="button" onClick={goHome} title="Voltar para início" className="text-sm font-bold text-slate-800 hover:text-sky-700 transition cursor-pointer">Pesquisa</button>
+            <button type="button" onClick={goHome} title="Voltar para início" className="text-sm font-bold text-stone-800 hover:text-sky-700 transition cursor-pointer">Pesquisa</button>
           </div>
-          <div className="flex items-center gap-2 text-xs text-slate-500">
+          <div className="flex items-center gap-2">
             {canEdit && (
               <button type="button" onClick={() => setShowEnrollment(true)}
                 className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-sky-700">
                 <Plus className="h-3.5 w-3.5" /> Nova Matrícula
               </button>
             )}
-            <span className="hidden sm:inline">{user?.full_name}</span>
-            <button type="button" onClick={() => { api.logout(); navigate('/login') }}
-              className="rounded-lg border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50">Sair</button>
+            {/* User menu */}
+            <div className="relative">
+              <button type="button" onClick={() => setUserMenuOpen(!userMenuOpen)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs text-stone-700 hover:bg-stone-50 transition">
+                <UserCircle className="h-4 w-4 text-stone-400" />
+                <span className="hidden sm:inline font-medium">{user?.full_name}</span>
+                <ChevronDown className="h-3 w-3 text-stone-400" />
+              </button>
+              {userMenuOpen && (
+                <div className="absolute right-0 top-full mt-1 w-56 rounded-xl border border-stone-200 bg-white py-1 shadow-lg z-50" onMouseLeave={() => setUserMenuOpen(false)}>
+                  <div className="px-3 py-2 border-b border-stone-100">
+                    <p className="text-sm font-semibold text-stone-800">{user?.full_name}</p>
+                    <p className="text-[10px] text-stone-500 capitalize">{user?.role}</p>
+                  </div>
+                  {user?.role === 'admin' && (
+                    <button type="button" onClick={() => { setUserMenuOpen(false); setShowAdmin(true) }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-stone-700 hover:bg-stone-50">
+                      <Shield className="h-4 w-4 text-stone-400" /> Gerenciar usuários
+                    </button>
+                  )}
+                  <button type="button" onClick={() => { setUserMenuOpen(false); api.logout(); navigate('/login') }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50">
+                    <LogOut className="h-4 w-4" /> Sair
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
@@ -218,7 +285,7 @@ export default function SearchPage() {
                 value={query}
                 onChange={(e) => handleInputChange(e.target.value)}
                 placeholder="Pesquisar aluno, responsável, turma..."
-                className="w-full rounded-2xl border border-slate-200 bg-white py-3.5 pl-12 pr-12 text-base shadow-sm transition focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                className="w-full rounded-2xl border border-stone-200 bg-white py-3.5 pl-12 pr-12 text-base shadow-sm transition focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
               />
               {query && (
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1">
@@ -788,6 +855,144 @@ function ActiveStudentsList({ onBack, onSelect }) {
           {filtered.length > 100 && <p className="py-2 text-center text-xs text-slate-400">Mostrando 100 de {filtered.length}. Use o filtro para refinar.</p>}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ============================================================
+// Admin users management
+// ============================================================
+function AdminUsersView({ onBack }) {
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showCreate, setShowCreate] = useState(false)
+  const [editingId, setEditingId] = useState(null)
+  const [form, setForm] = useState({ full_name: '', email: '', password: '', role: 'secretaria' })
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  async function loadUsers() {
+    try {
+      const d = await api.listStaffUsers()
+      setUsers(d.rows || [])
+    } catch (err) { setMsg(err.message) }
+    setLoading(false)
+  }
+
+  useEffect(() => { loadUsers() }, [])
+
+  async function handleCreate(e) {
+    e.preventDefault(); setSaving(true); setMsg('')
+    try {
+      await api.createStaffUser(form)
+      setForm({ full_name: '', email: '', password: '', role: 'secretaria' })
+      setShowCreate(false)
+      await loadUsers()
+      setMsg('Usuário criado.')
+    } catch (err) { setMsg(err.message) }
+    setSaving(false)
+  }
+
+  async function handleUpdate(id, data) {
+    setSaving(true); setMsg('')
+    try {
+      await api.updateStaffUser(id, data)
+      setEditingId(null)
+      await loadUsers()
+      setMsg('Atualizado.')
+    } catch (err) { setMsg(err.message) }
+    setSaving(false)
+  }
+
+  if (loading) return <div className="flex h-screen items-center justify-center bg-stone-100/60"><Loader2 className="h-8 w-8 animate-spin text-sky-500" /></div>
+
+  const ROLE_LABELS = { admin: 'Admin', secretaria: 'Secretaria', support: 'Suporte', readonly: 'Leitura' }
+
+  return (
+    <div className="min-h-screen bg-stone-100/60">
+      <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-stone-200 bg-white/80 backdrop-blur px-4 py-3 md:px-6">
+        <button type="button" onClick={onBack} className="rounded-lg p-1.5 hover:bg-stone-100"><ArrowLeft className="h-5 w-5 text-stone-600" /></button>
+        <Shield className="h-5 w-5 text-sky-600" />
+        <h1 className="text-base font-bold text-stone-800">Gerenciar Usuários</h1>
+        <button type="button" onClick={() => setShowCreate(!showCreate)}
+          className="ml-auto inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700">
+          <Plus className="h-3.5 w-3.5" /> Novo Usuário
+        </button>
+      </header>
+
+      <div className="mx-auto max-w-2xl px-4 py-5 md:px-6 space-y-4">
+        {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.includes('Erro') || msg.includes('inválido') || msg.includes('obrigatório') ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>{msg}</p>}
+
+        {showCreate && (
+          <form onSubmit={handleCreate} className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm space-y-3">
+            <h2 className="text-sm font-bold text-stone-700">Novo Usuário</h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FormField label="Nome *" value={form.full_name} onChange={v => setForm(p => ({...p, full_name: v}))} required />
+              <FormField label="E-mail *" type="email" value={form.email} onChange={v => setForm(p => ({...p, email: v}))} required />
+              <FormField label="Senha *" type="password" value={form.password} onChange={v => setForm(p => ({...p, password: v}))} required placeholder="Mínimo 8 caracteres" />
+              <div>
+                <label className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Perfil</label>
+                <select value={form.role} onChange={e => setForm(p => ({...p, role: e.target.value}))}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-sky-400 focus:outline-none">
+                  <option value="admin">Admin</option>
+                  <option value="secretaria">Secretaria</option>
+                  <option value="support">Suporte</option>
+                  <option value="readonly">Leitura</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" disabled={saving} className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50">{saving ? 'Criando...' : 'Criar'}</button>
+              <button type="button" onClick={() => setShowCreate(false)} className="rounded-lg border border-stone-200 px-4 py-2 text-sm text-stone-700 hover:bg-stone-50">Cancelar</button>
+            </div>
+          </form>
+        )}
+
+        <div className="space-y-2">
+          {users.map(u => (
+            <div key={u.id} className={`rounded-xl border bg-white px-4 py-3 shadow-sm ${u.active ? 'border-stone-200' : 'border-rose-200 bg-rose-50/30'}`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-stone-800">{u.full_name} {!u.active && <span className="text-rose-500 text-xs">(desativado)</span>}</p>
+                  <p className="text-xs text-stone-500">{u.email} • <span className="capitalize">{ROLE_LABELS[u.role] || u.role}</span></p>
+                </div>
+                <div className="flex items-center gap-1">
+                  {editingId === u.id ? (
+                    <EditUserInline user={u} onSave={(data) => handleUpdate(u.id, data)} onCancel={() => setEditingId(null)} saving={saving} />
+                  ) : (
+                    <button type="button" onClick={() => setEditingId(u.id)} className="rounded-lg border border-stone-200 px-2 py-1 text-xs text-stone-600 hover:bg-stone-50">Editar</button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function EditUserInline({ user, onSave, onCancel, saving }) {
+  const [role, setRole] = useState(user.role)
+  const [active, setActive] = useState(user.active)
+  const [password, setPassword] = useState('')
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 mt-2">
+      <select value={role} onChange={e => setRole(e.target.value)} className="rounded border border-stone-200 px-2 py-1 text-xs">
+        <option value="admin">Admin</option>
+        <option value="secretaria">Secretaria</option>
+        <option value="support">Suporte</option>
+        <option value="readonly">Leitura</option>
+      </select>
+      <label className="flex items-center gap-1 text-xs text-stone-600">
+        <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} /> Ativo
+      </label>
+      <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Nova senha (opcional)"
+        className="rounded border border-stone-200 px-2 py-1 text-xs w-36" />
+      <button type="button" disabled={saving} onClick={() => onSave({ role, active, ...(password.length >= 8 ? { password } : {}) })}
+        className="rounded bg-sky-600 px-2 py-1 text-xs text-white hover:bg-sky-700 disabled:opacity-50">Salvar</button>
+      <button type="button" onClick={onCancel} className="rounded border border-stone-200 px-2 py-1 text-xs hover:bg-stone-50">Cancelar</button>
     </div>
   )
 }
