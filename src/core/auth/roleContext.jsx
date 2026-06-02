@@ -4,6 +4,7 @@ import { hasSupabaseConfig, isLocalCheckoutMode, supabase } from '../../lib/supa
 import { normalizeRoleInput } from './permissions'
 import { schoolCrudService } from '../services/repositoryRegistry'
 import { localLogin, localLogout, clearLocalToken } from '../services/localCheckoutApiClient'
+import * as veritusApi from '../services/veritusApiClient'
 
 const STORAGE_ROLE_KEY = 'cav_os_user_role'
 const STORAGE_MODE_KEY = 'cav_os_access_mode'
@@ -199,10 +200,21 @@ export function RoleProvider({ children }) {
           return
         }
 
+        // Try local API server first (VeritusOS backend)
+        try {
+          const apiUser = await veritusApi.login(email, password)
+          const apiRole = normalizeRole(apiUser.role)
+          setModeState('real')
+          setRoleState(apiRole)
+          setUser({ id: apiUser.id, email: apiUser.email, full_name: apiUser.full_name })
+          setAuthBusy(false)
+          return
+        } catch { /* API not available, try local employee DB */ }
+
         const employees = await schoolCrudService.listEmployees()
         const account = employees.find((item) => String(item.email || '').toLowerCase() === String(email).toLowerCase())
         if (!account) {
-          throw new Error('Conta não encontrada no modo local.')
+          throw new Error('Conta não encontrada.')
         }
         const localRole = normalizeRole(account.access_type)
         setModeState('real')

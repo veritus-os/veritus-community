@@ -9,11 +9,18 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "local:server": "node scripts/local-checkout-server.js",
-    "local:dev": "cp .env.local-checkout .env.local && vite --host"
+    "local:dev": "cp .env.local-checkout .env.local && vite --host",
+    "api": "node server/index.js",
+    "api:import": "node server/scripts/import-from-supabase.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.0",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "exceljs": "^4.4.0",
+    "jsonwebtoken": "^9.0.3",
     "lucide-react": "^1.8.0",
+    "pg": "^8.21.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.14.0"

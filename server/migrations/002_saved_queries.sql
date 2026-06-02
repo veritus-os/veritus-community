@@ -1,0 +1,11 @@
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS saved_queries (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES staff_users(id) ON DELETE CASCADE,
+  label TEXT NOT NULL,
+  query TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+COMMIT;

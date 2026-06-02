@@ -30,14 +30,15 @@ import AdminPage from './pages/AdminPage'
 import BugReporter from './components/BugReporter'
 import { FeatureFlagsProvider } from './core/config/featureFlagsContext'
 import StudentCheckoutPage from './pages/StudentCheckoutPage'
+import SearchPage from './pages/SearchPage'
 
 function HomeRedirect() {
   const { role, isAuthenticated, isDemoMode } = useRole()
 
   const homeByRole = {
-    super_admin: '/admin',
-    admin: '/dashboard',
-    secretaria: '/dashboard',
+    super_admin: '/search',
+    admin: '/search',
+    secretaria: '/search',
     reception: '/checkout',
     infantil_coordination: '/checkout',
     fundamental_coordination: '/checkout',
@@ -76,6 +77,17 @@ function App() {
             }
           />
           <Route path="/home" element={<HomeRedirect />} />
+          <Route
+            path="/search"
+            element={
+              <ProtectedRoute
+                allowedRoles={['super_admin', 'admin', 'secretaria', 'support']}
+                redirectTo="/home"
+              >
+                <SearchPage />
+              </ProtectedRoute>
+            }
+          />
 
         <Route
           path="/admin"
