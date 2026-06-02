@@ -31,9 +31,21 @@ import BugReporter from './components/BugReporter'
 import { FeatureFlagsProvider } from './core/config/featureFlagsContext'
 import StudentCheckoutPage from './pages/StudentCheckoutPage'
 import SearchPage from './pages/SearchPage'
+import { ModuleProvider, useModule } from './core/config/moduleContext'
 
 function HomeRedirect() {
   const { role, isAuthenticated, isDemoMode } = useRole()
+  const mod = useModule()
+
+  // Module-specific home override
+  if (mod.id === 'checkout') {
+    if (!isAuthenticated) return <Navigate to="/login" replace />
+    return <Navigate to="/checkout" replace />
+  }
+  if (mod.id === 'search') {
+    if (!isAuthenticated) return <Navigate to="/login" replace />
+    return <Navigate to="/search" replace />
+  }
 
   const homeByRole = {
     super_admin: '/search',
@@ -56,6 +68,7 @@ function HomeRedirect() {
 
 function App() {
   return (
+    <ModuleProvider>
     <RoleProvider>
       <FeatureFlagsProvider>
       <EntityInfoProvider>
@@ -280,6 +293,7 @@ function App() {
       </EntityInfoProvider>
       </FeatureFlagsProvider>
     </RoleProvider>
+    </ModuleProvider>
   )
 }
 
