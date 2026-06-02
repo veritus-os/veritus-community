@@ -9,39 +9,88 @@
 
 import { createServer } from 'node:http'
 import { URL } from 'node:url'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import ExcelJS from 'exceljs'
 
+const __dirname = dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT) || 3001
 const DB_URL = process.env.DATABASE_URL || 'postgres://localhost:5432/veritus_os'
-const JWT_SECRET = process.env.JWT_SECRET || 'veritus-dev-secret-change-in-prod'
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || '').split(',').filter(Boolean)
+const MAX_BODY_SIZE = 1024 * 1024 // 1 MB
+
+// Auto-generate JWT secret if not set
+function loadJwtSecret() {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET
+  const secretFile = join(__dirname, '.jwt-secret')
+  if (existsSync(secretFile)) return readFileSync(secretFile, 'utf-8').trim()
+  const secret = randomBytes(48).toString('base64')
+  writeFileSync(secretFile, secret, 'utf-8')
+  console.log('  Generated new JWT secret (stored in server/.jwt-secret)')
+  return secret
+}
+const JWT_SECRET = loadJwtSecret()
 
 const pool = new pg.Pool({ connectionString: DB_URL })
+
+// Rate limiter for login
+const loginAttempts = new Map()
+function checkLoginRate(ip) {
+  const now = Date.now()
+  const entry = loginAttempts.get(ip) || { count: 0, resetAt: now + 60000 }
+  if (now > entry.resetAt) { entry.count = 0; entry.resetAt = now + 60000 }
+  entry.count++
+  loginAttempts.set(ip, entry)
+  return entry.count <= 10 // max 10 attempts per minute
+}
 
 // ---------------------------------------------------------------------------
 // HTTP helpers
 // ---------------------------------------------------------------------------
-function json(res, code, body) {
-  res.writeHead(code, {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
+function corsOrigin(req) {
+  if (ALLOWED_ORIGINS.length === 0) return req.headers.origin || '*'
+  const origin = req.headers.origin || ''
+  return ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
+}
+
+function corsHeaders(req) {
+  return {
+    'Access-Control-Allow-Origin': corsOrigin(req),
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  })
+  }
+}
+
+function json(res, code, body, req) {
+  res.writeHead(code, { 'Content-Type': 'application/json', ...corsHeaders(req) })
   res.end(JSON.stringify(body))
 }
 
 function readBody(req) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const chunks = []
-    req.on('data', c => chunks.push(c))
+    let size = 0
+    req.on('data', c => {
+      size += c.length
+      if (size > MAX_BODY_SIZE) { reject(new Error('Payload muito grande.')); req.destroy(); return }
+      chunks.push(c)
+    })
     req.on('end', () => {
       try { resolve(JSON.parse(Buffer.concat(chunks).toString())) }
       catch { resolve({}) }
     })
+    req.on('error', reject)
   })
+}
+
+function maskCpf(cpf) {
+  if (!cpf || cpf.length < 6) return cpf ? '***' : null
+  return `***.***${cpf.slice(-6, -3)}-${cpf.slice(-2)}`
 }
 
 function auth(req, url) {
@@ -56,7 +105,7 @@ function auth(req, url) {
 
 function requireAuth(req, res, url) {
   const user = auth(req, url)
-  if (!user) { json(res, 401, { error: 'Não autenticado.' }); return null }
+  if (!user) { json(res, 401, { error: 'Não autenticado.' }, req); return null }
   return user
 }
 
@@ -73,37 +122,35 @@ async function handle(req, res) {
   const method = req.method
 
   if (method === 'OPTIONS') {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    })
+    res.writeHead(204, corsHeaders(req))
     return res.end()
   }
 
   // --- Health ---
   if (path === '/api/health') {
     const { rows } = await pool.query("SELECT count(*) AS n FROM students WHERE active = true")
-    return json(res, 200, { status: 'ok', students: Number(rows[0].n) })
+    return json(res, 200, { status: 'ok', students: Number(rows[0].n) }, req)
   }
 
   // --- Auth ---
   if (method === 'POST' && path === '/api/auth/login') {
+    const ip = req.socket.remoteAddress || 'unknown'
+    if (!checkLoginRate(ip)) return json(res, 429, { error: 'Muitas tentativas. Aguarde 1 minuto.' }, req)
     const { email, password } = await readBody(req)
-    if (!email || !password) return json(res, 400, { error: 'Informe e-mail e senha.' })
+    if (!email || !password) return json(res, 400, { error: 'Informe e-mail e senha.' }, req)
     const { rows } = await pool.query('SELECT * FROM staff_users WHERE email = $1 AND active = true', [email.toLowerCase()])
-    if (!rows.length) return json(res, 401, { error: 'Usuário não encontrado.' })
+    if (!rows.length) return json(res, 401, { error: 'Credenciais inválidas.' }, req)
     const user = rows[0]
     const valid = bcrypt.compareSync(password, user.password_hash)
-    if (!valid) return json(res, 401, { error: 'Senha incorreta.' })
+    if (!valid) return json(res, 401, { error: 'Credenciais inválidas.' }, req)
     const token = jwt.sign({ id: user.id, email: user.email, name: user.full_name, role: user.role }, JWT_SECRET, { expiresIn: '12h' })
-    return json(res, 200, { token, user: { id: user.id, email: user.email, full_name: user.full_name, role: user.role } })
+    return json(res, 200, { token, user: { id: user.id, email: user.email, full_name: user.full_name, role: user.role } }, req)
   }
 
   if (path === '/api/auth/me') {
     const user = requireAuth(req, res)
     if (!user) return
-    return json(res, 200, { user })
+    return json(res, 200, { user }, req)
   }
 
   // --- Search ---
@@ -111,7 +158,7 @@ async function handle(req, res) {
     const user = requireAuth(req, res)
     if (!user) return
     const q = url.searchParams.get('q') || ''
-    if (q.length < 2) return json(res, 200, { students: [], guardians: [] })
+    if (q.length < 2) return json(res, 200, { students: [], guardians: [] }, req)
 
     const likeQ = `%${q}%`
     const [sRes, gRes] = await Promise.all([
@@ -129,7 +176,8 @@ async function handle(req, res) {
     pool.query('INSERT INTO search_history (user_id, query, result_count) VALUES ($1, $2, $3)',
       [user.id, q, sRes.rows.length + gRes.rows.length]).catch(() => {})
 
-    return json(res, 200, { students: sRes.rows, guardians: gRes.rows })
+    const guardians = gRes.rows.map(g => ({ ...g, cpf: maskCpf(g.cpf) }))
+    return json(res, 200, { students: sRes.rows, guardians }, req)
   }
 
   // --- Search history ---
@@ -139,7 +187,7 @@ async function handle(req, res) {
     const { rows } = await pool.query(
       'SELECT DISTINCT ON (query) query, result_count, created_at FROM search_history WHERE user_id = $1 ORDER BY query, created_at DESC LIMIT 20',
       [user.id])
-    return json(res, 200, { history: rows })
+    return json(res, 200, { history: rows }, req)
   }
 
   // --- Student profile ---
@@ -147,7 +195,7 @@ async function handle(req, res) {
     const user = requireAuth(req, res)
     if (!user) return
     const id = Number(path.split('/')[3])
-    if (!id) return json(res, 400, { error: 'ID inválido.' })
+    if (!id) return json(res, 400, { error: 'ID inválido.' }, req)
 
     const [sRes, gRes, mRes] = await Promise.all([
       pool.query('SELECT * FROM students WHERE id = $1', [id]),
@@ -157,15 +205,17 @@ async function handle(req, res) {
       pool.query('SELECT * FROM meal_subscriptions WHERE student_id = $1 AND active = true ORDER BY weekday, service_type', [id]),
     ])
 
-    if (!sRes.rows.length) return json(res, 404, { error: 'Aluno não encontrado.' })
-    return json(res, 200, { student: sRes.rows[0], guardians: gRes.rows, meals: mRes.rows })
+    if (!sRes.rows.length) return json(res, 404, { error: 'Aluno não encontrado.' }, req)
+    const student = { ...sRes.rows[0], cpf: maskCpf(sRes.rows[0].cpf) }
+    const guardians = gRes.rows.map(g => ({ ...g, cpf: maskCpf(g.cpf) }))
+    return json(res, 200, { student, guardians, meals: mRes.rows }, req)
   }
 
   // --- Student update ---
   if (method === 'PUT' && path.startsWith('/api/students/')) {
     const user = requireAuth(req, res)
     if (!user) return
-    if (!canEdit(user)) return json(res, 403, { error: 'Sem permissão para editar.' })
+    if (!canEdit(user)) return json(res, 403, { error: 'Sem permissão para editar.' }, req)
     const id = Number(path.split('/')[3])
     const body = await readBody(req)
 
@@ -174,7 +224,7 @@ async function handle(req, res) {
     for (const [k, v] of Object.entries(body)) {
       if (allowed.includes(k)) { sets.push(`${k} = $${idx}`); vals.push(v); idx++ }
     }
-    if (!sets.length) return json(res, 400, { error: 'Nenhum campo para atualizar.' })
+    if (!sets.length) return json(res, 400, { error: 'Nenhum campo para atualizar.' }, req)
     sets.push(`updated_at = now()`)
     vals.push(id)
 
@@ -183,7 +233,7 @@ async function handle(req, res) {
       [user.id, user.name, 'students', 'student', id, 'update', JSON.stringify(body)])
 
     const { rows } = await pool.query('SELECT * FROM students WHERE id = $1', [id])
-    return json(res, 200, { student: rows[0] })
+    return json(res, 200, { student: rows[0] }, req)
   }
 
   // --- Students list ---
@@ -207,7 +257,7 @@ async function handle(req, res) {
       `SELECT id, full_name, class_name, segment, shift, modality, allergies, active
        FROM students ${where} ORDER BY class_name, full_name LIMIT $${params.length - 1} OFFSET $${params.length}`, params)
     const countRes = await pool.query(`SELECT count(*) AS n FROM students ${where}`, params.slice(0, -2))
-    return json(res, 200, { rows, total: Number(countRes.rows[0].n) })
+    return json(res, 200, { rows, total: Number(countRes.rows[0].n) }, req)
   }
 
   // --- Classes ---
@@ -218,7 +268,7 @@ async function handle(req, res) {
       `SELECT class_name, segment, count(*) AS student_count
        FROM students WHERE active = true AND class_name IS NOT NULL
        GROUP BY class_name, segment ORDER BY class_name`)
-    return json(res, 200, { rows })
+    return json(res, 200, { rows }, req)
   }
 
   // --- Meal report data ---
@@ -234,7 +284,7 @@ async function handle(req, res) {
       GROUP BY ms.weekday, ms.service_type, s.segment
       ORDER BY ms.weekday, ms.service_type`)
     const subCount = await pool.query('SELECT count(DISTINCT student_id) AS n FROM meal_subscriptions WHERE active = true')
-    return json(res, 200, { rows, total_subscribers: Number(subCount.rows[0].n) })
+    return json(res, 200, { rows, total_subscribers: Number(subCount.rows[0].n) }, req)
   }
 
   // --- Meal subscribers list ---
@@ -248,7 +298,7 @@ async function handle(req, res) {
       JOIN meal_subscriptions ms ON s.id = ms.student_id AND ms.active = true
       WHERE s.active = true
       GROUP BY s.id ORDER BY s.class_name, s.full_name`)
-    return json(res, 200, { rows })
+    return json(res, 200, { rows }, req)
   }
 
   // --- Meal report XLSX download ---
@@ -415,22 +465,22 @@ async function handle(req, res) {
   if (method === 'POST' && path === '/api/enrollment') {
     const user = requireAuth(req, res)
     if (!user) return
-    if (!canEdit(user)) return json(res, 403, { error: 'Sem permissão para criar matrícula.' })
+    if (!canEdit(user)) return json(res, 403, { error: 'Sem permissão para criar matrícula.' }, req)
 
     const body = await readBody(req)
     const { student, responsible } = body
-    if (!student?.full_name?.trim()) return json(res, 400, { error: 'Nome do aluno é obrigatório.' })
-    if (!student?.birth_date) return json(res, 400, { error: 'Data de nascimento é obrigatória.' })
-    if (!student?.class_name?.trim()) return json(res, 400, { error: 'Turma é obrigatória.' })
-    if (!responsible?.full_name?.trim()) return json(res, 400, { error: 'Nome do responsável é obrigatório.' })
-    if (!responsible?.phone?.trim() && !responsible?.email?.trim()) return json(res, 400, { error: 'Telefone ou e-mail do responsável é obrigatório.' })
+    if (!student?.full_name?.trim()) return json(res, 400, { error: 'Nome do aluno é obrigatório.' }, req)
+    if (!student?.birth_date) return json(res, 400, { error: 'Data de nascimento é obrigatória.' }, req)
+    if (!student?.class_name?.trim()) return json(res, 400, { error: 'Turma é obrigatória.' }, req)
+    if (!responsible?.full_name?.trim()) return json(res, 400, { error: 'Nome do responsável é obrigatório.' }, req)
+    if (!responsible?.phone?.trim() && !responsible?.email?.trim()) return json(res, 400, { error: 'Telefone ou e-mail do responsável é obrigatório.' }, req)
 
     // Duplicate check
     const dupCheck = await pool.query(
       `SELECT id, full_name, class_name FROM students WHERE upper(full_name) = upper($1) AND birth_date = $2 AND active = true`,
       [student.full_name.trim(), student.birth_date])
     if (dupCheck.rows.length > 0) {
-      return json(res, 409, { error: `Aluno "${dupCheck.rows[0].full_name}" já existe na turma ${dupCheck.rows[0].class_name}.`, existing: dupCheck.rows[0] })
+      return json(res, 409, { error: `Aluno "${dupCheck.rows[0].full_name}" já existe na turma ${dupCheck.rows[0].class_name}.`, existing: dupCheck.rows[0] }, req)
     }
 
     // Determine segment from class name
@@ -444,38 +494,45 @@ async function handle(req, res) {
     if (cn.includes('INTEGRAL')) modality = 'integral'
     if (cn.includes('CONTRATURNO')) modality = 'contraturno'
 
-    // Create family
-    const famRes = await pool.query(
-      `INSERT INTO families (family_name, family_code) VALUES ($1, 'FAM-' || lpad(nextval('families_id_seq')::text, 4, '0')) RETURNING id`,
-      [`Família ${student.full_name.trim().split(' ').slice(-1)[0]}`])
-    const familyId = famRes.rows[0].id
+    // Transaction: all-or-nothing
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
 
-    // Create student
-    const stuRes = await pool.query(
-      `INSERT INTO students (family_id, full_name, birth_date, sex, segment, class_name, shift, modality, allergies, notes, active)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true) RETURNING *`,
-      [familyId, student.full_name.trim(), student.birth_date, student.sex || null, segment,
-       student.class_name.trim(), shift, modality, student.allergies || null, student.notes || null])
-    const newStudent = stuRes.rows[0]
+      const famRes = await client.query(
+        `INSERT INTO families (family_name, family_code) VALUES ($1, 'FAM-' || lpad(nextval('families_id_seq')::text, 4, '0')) RETURNING id`,
+        [`Família ${student.full_name.trim().split(' ').slice(-1)[0]}`])
+      const familyId = famRes.rows[0].id
 
-    // Create guardian
-    const guaRes = await pool.query(
-      `INSERT INTO guardians (full_name, cpf, email, phone) VALUES ($1,$2,$3,$4) RETURNING id`,
-      [responsible.full_name.trim(), responsible.cpf || null, responsible.email || null, responsible.phone || null])
-    const guardianId = guaRes.rows[0].id
+      const stuRes = await client.query(
+        `INSERT INTO students (family_id, full_name, birth_date, sex, segment, class_name, shift, modality, allergies, notes, active)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true) RETURNING *`,
+        [familyId, student.full_name.trim(), student.birth_date, student.sex || null, segment,
+         student.class_name.trim(), shift, modality, student.allergies || null, student.notes || null])
+      const newStudent = stuRes.rows[0]
 
-    // Link
-    await pool.query(
-      `INSERT INTO student_guardians (student_id, guardian_id, relationship, is_primary, can_pickup) VALUES ($1,$2,$3,true,true)`,
-      [newStudent.id, guardianId, responsible.relationship || null])
+      const guaRes = await client.query(
+        `INSERT INTO guardians (full_name, cpf, email, phone) VALUES ($1,$2,$3,$4) RETURNING id`,
+        [responsible.full_name.trim(), responsible.cpf || null, responsible.email || null, responsible.phone || null])
+      const guardianId = guaRes.rows[0].id
 
-    // Audit
-    await pool.query(
-      `INSERT INTO audit_logs (user_id, user_name, module, entity_type, entity_id, action, details) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [user.id, user.name, 'enrollment', 'student', newStudent.id, 'create',
-       JSON.stringify({ student: newStudent.full_name, responsible: responsible.full_name, class: student.class_name })])
+      await client.query(
+        `INSERT INTO student_guardians (student_id, guardian_id, relationship, is_primary, can_pickup) VALUES ($1,$2,$3,true,true)`,
+        [newStudent.id, guardianId, responsible.relationship || null])
 
-    return json(res, 201, { student: newStudent, family_id: familyId, guardian_id: guardianId })
+      await client.query(
+        `INSERT INTO audit_logs (user_id, user_name, module, entity_type, entity_id, action, details) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [user.id, user.name, 'enrollment', 'student', newStudent.id, 'create',
+         JSON.stringify({ student: newStudent.full_name, responsible: responsible.full_name, class: student.class_name })])
+
+      await client.query('COMMIT')
+      return json(res, 201, { student: newStudent, family_id: familyId, guardian_id: guardianId }, req)
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
   }
 
   // --- Saved queries ---
@@ -483,18 +540,18 @@ async function handle(req, res) {
     const user = requireAuth(req, res)
     if (!user) return
     const { rows } = await pool.query('SELECT * FROM saved_queries WHERE user_id = $1 ORDER BY created_at DESC', [user.id])
-    return json(res, 200, { rows })
+    return json(res, 200, { rows }, req)
   }
 
   if (method === 'POST' && path === '/api/saved-queries') {
     const user = requireAuth(req, res)
     if (!user) return
     const { label, query: q } = await readBody(req)
-    if (!label?.trim() || !q?.trim()) return json(res, 400, { error: 'Label e query são obrigatórios.' })
+    if (!label?.trim() || !q?.trim()) return json(res, 400, { error: 'Label e query são obrigatórios.' }, req)
     const { rows } = await pool.query(
       'INSERT INTO saved_queries (user_id, label, query) VALUES ($1,$2,$3) RETURNING *',
       [user.id, label.trim(), q.trim()])
-    return json(res, 201, { saved: rows[0] })
+    return json(res, 201, { saved: rows[0] }, req)
   }
 
   if (method === 'DELETE' && path.startsWith('/api/saved-queries/')) {
@@ -502,10 +559,10 @@ async function handle(req, res) {
     if (!user) return
     const id = Number(path.split('/')[3])
     await pool.query('DELETE FROM saved_queries WHERE id = $1 AND user_id = $2', [id, user.id])
-    return json(res, 200, { ok: true })
+    return json(res, 200, { ok: true }, req)
   }
 
-  json(res, 404, { error: 'Endpoint não encontrado.' })
+  json(res, 404, { error: 'Endpoint não encontrado.' }, req)
 }
 
 // ---------------------------------------------------------------------------
@@ -513,8 +570,9 @@ async function handle(req, res) {
 // ---------------------------------------------------------------------------
 const server = createServer((req, res) => {
   handle(req, res).catch(err => {
-    console.error('Error:', err.message)
-    json(res, 500, { error: 'Erro interno.' })
+    console.error(`[${new Date().toISOString()}] ${req.method} ${req.url} ERROR:`, err.message)
+    const safeMessage = err.message?.includes('Payload muito grande') ? err.message : 'Erro interno do servidor.'
+    json(res, 500, { error: safeMessage }, req)
   })
 })
 

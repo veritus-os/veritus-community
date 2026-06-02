@@ -20,6 +20,9 @@ dist-ssr
 # Local checkout server runtime data (seed is tracked, runtime is not)
 scripts/data/local-checkout-data.json
 
+# Server secrets (auto-generated)
+server/.jwt-secret
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
