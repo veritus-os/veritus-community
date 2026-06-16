@@ -33,3 +33,4 @@ server/.jwt-secret
 *.njsproj
 *.sln
 *.sw?
+logs/

@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "local:server": "node scripts/local-checkout-server.js",
+    "checkout:server": "node scripts/checkout-pg-server.js",
     "local:dev": "cp .env.local-checkout .env.local && vite --host",
     "api": "node server/index.js",
     "api:import": "node server/scripts/import-from-supabase.js",
