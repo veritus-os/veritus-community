@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import * as api from '../core/services/veritusApiClient'
 import { getTheme, toggleTheme } from '../core/config/theme'
+import { getAvailableModules } from '../core/auth/permissions'
 
 // ============================================================
 // Constants
@@ -261,6 +262,12 @@ export default function SearchPage() {
                     <button type="button" onClick={() => { setUserMenuOpen(false); setShowAdmin(true) }}
                       className="flex w-full items-center gap-2 px-3 py-2 text-sm text-stone-700 dark:text-slate-300 hover:bg-stone-50 dark:hover:bg-slate-700">
                       <Shield className="h-4 w-4 text-stone-400 dark:text-slate-400" /> Gerenciar usuários
+                    </button>
+                  )}
+                  {getAvailableModules(user?.modules, user?.role).length > 1 && (
+                    <button type="button" onClick={() => { setUserMenuOpen(false); navigate('/hub') }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-stone-700 dark:text-slate-300 hover:bg-stone-50 dark:hover:bg-slate-700">
+                      <LayoutGrid className="h-4 w-4 text-stone-400 dark:text-slate-400" /> Hub (trocar módulo)
                     </button>
                   )}
                   <button type="button" onClick={() => { setUserMenuOpen(false); api.logout(); navigate('/login') }}

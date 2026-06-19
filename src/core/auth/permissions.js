@@ -174,3 +174,58 @@ export function getAllowedModules(role) {
     { key: 'patrimonio', path: '/patrimonio', label: 'Patrimônio', roles: ['super_admin', 'admin', 'financeiro', 'secretaria', 'professor'] },
   ].filter((module) => module.roles.includes(normalizedRole))
 }
+
+// ---------------------------------------------------------------------------
+// Top-level modules (the "hub" entries). staff_users.modules is the source of
+// truth for `search` / `checkout`; the `admin` panel is offered by role.
+// ---------------------------------------------------------------------------
+export const MODULE_TARGETS = {
+  search: {
+    key: 'search',
+    path: '/search',
+    label: 'Busca / Secretaria',
+    description: 'Pesquise alunos, famílias, turmas e gere relatórios.',
+    tone: 'indigo',
+  },
+  checkout: {
+    key: 'checkout',
+    path: '/checkout',
+    label: 'Saída de Alunos',
+    description: 'Monitor de saída, portaria e coordenação.',
+    tone: 'emerald',
+  },
+  admin: {
+    key: 'admin',
+    path: '/admin',
+    label: 'Administração',
+    description: 'Configurações da plataforma e usuários.',
+    tone: 'sky',
+  },
+}
+
+const MODULE_ORDER = ['search', 'checkout', 'admin']
+
+/**
+ * Resolve which top-level modules a user can open.
+ * @param {string[]} modules - staff_users.modules (e.g. ['search','checkout'])
+ * @param {string} role - normalized/raw role (admin panel is role-based)
+ * @returns {Array} ordered module target objects
+ */
+export function getAvailableModules(modules = [], role) {
+  const set = new Set(Array.isArray(modules) ? modules : [])
+  if (normalizeRoleInput(role) === 'super_admin') set.add('admin')
+  return MODULE_ORDER.filter((key) => set.has(key)).map((key) => MODULE_TARGETS[key])
+}
+
+/**
+ * Fallback when a backend doesn't return modules (legacy server / Supabase):
+ * derive a sensible module set from the role.
+ */
+export function deriveModulesFromRole(role) {
+  const r = normalizeRoleInput(role)
+  if (!r) return []
+  const mods = []
+  if (['super_admin', 'admin', 'secretaria', 'support'].includes(r)) mods.push('search')
+  if (['super_admin', 'admin', 'secretaria', 'professor', 'reception', 'infantil_coordination', 'fundamental_coordination', 'support'].includes(r)) mods.push('checkout')
+  return mods.length ? mods : ['checkout']
+}

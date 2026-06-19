@@ -181,8 +181,8 @@ async function handle(req, res) {
       return json(res, 401, { error: 'Credenciais inválidas.' })
     if (!(u.modules || []).includes('checkout'))
       return json(res, 403, { error: 'Usuário sem acesso ao módulo de saída.' })
-    const session = { id: String(u.id), email: u.email, full_name: u.full_name, role: u.role }
-    const token = jwt.sign(session, JWT_SECRET, { expiresIn: '12h' })
+    const session = { id: String(u.id), email: u.email, full_name: u.full_name, role: u.role, modules: u.modules || [] }
+    const token = jwt.sign({ id: session.id, email: session.email, full_name: session.full_name, role: session.role }, JWT_SECRET, { expiresIn: '12h' })
     return json(res, 200, { session: { token, ...session } })
   }
   if (method === 'GET' && path === '/api/auth/me') {

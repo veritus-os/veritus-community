@@ -1,6 +1,6 @@
-import { LogOut, LayoutDashboard } from 'lucide-react'
+import { LogOut, LayoutDashboard, LayoutGrid } from 'lucide-react'
 import { useFeatureFlags } from '../core/config/featureFlagsContext'
-import { ROLE_LABELS } from '../core/auth/permissions'
+import { ROLE_LABELS, getAvailableModules } from '../core/auth/permissions'
 import { useRole } from '../core/auth/roleContext'
 
 const STATUS_TONE_CLASS = {
@@ -11,8 +11,9 @@ const STATUS_TONE_CLASS = {
 }
 
 export default function CheckoutShell({ title, statusLabel = '', statusTone = 'slate', children }) {
-  const { role, user, isDemoMode, signOut } = useRole()
+  const { role, user, modules, isDemoMode, signOut } = useRole()
   const { schoolName } = useFeatureFlags()
+  const showHubLink = !isDemoMode && getAvailableModules(modules, role).length > 1
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-slate-50 text-slate-800">
@@ -47,6 +48,16 @@ export default function CheckoutShell({ title, statusLabel = '', statusTone = 's
                 {ROLE_LABELS[role] || 'Perfil'}{user?.email ? ` • ${user.email}` : ''}
               </p>
             </div>
+            {showHubLink ? (
+              <a
+                href="/hub"
+                title="Trocar de módulo"
+                className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Hub</span>
+              </a>
+            ) : null}
             <button
               type="button"
               onClick={signOut}

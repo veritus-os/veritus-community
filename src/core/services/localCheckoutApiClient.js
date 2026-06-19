@@ -110,3 +110,7 @@ export async function localHealthCheck() {
 export function clearLocalToken() {
   setToken(null)
 }
+
+export function localHasToken() {
+  return Boolean(getToken())
+}

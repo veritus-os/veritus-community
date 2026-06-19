@@ -1,14 +1,20 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { hasSupabaseConfig, isLocalCheckoutMode, supabase } from '../../lib/supabaseClient'
-import { normalizeRoleInput } from './permissions'
-import { schoolCrudService } from '../services/repositoryRegistry'
-import { localLogin, localLogout, clearLocalToken } from '../services/localCheckoutApiClient'
+import { normalizeRoleInput, deriveModulesFromRole } from './permissions'
+import { localLogin, localLogout, clearLocalToken, localHasToken } from '../services/localCheckoutApiClient'
 import * as veritusApi from '../services/veritusApiClient'
 
 const STORAGE_ROLE_KEY = 'cav_os_user_role'
 const STORAGE_MODE_KEY = 'cav_os_access_mode'
 const STORAGE_USER_KEY = 'cav_os_user_session'
+const STORAGE_MODULES_KEY = 'cav_os_user_modules'
+
+const KNOWN_MODULES = ['search', 'checkout', 'admin']
+function normalizeModules(value) {
+  if (!Array.isArray(value)) return []
+  return value.map((m) => String(m).trim().toLowerCase()).filter((m) => KNOWN_MODULES.includes(m))
+}
 
 const DEFAULT_ROLE = 'secretaria'
 const DEFAULT_MODE = 'real'
@@ -55,6 +61,15 @@ export function RoleProvider({ children }) {
       return null
     }
   })
+  const [modules, setModulesState] = useState(() => {
+    const stored = window.localStorage.getItem(STORAGE_MODULES_KEY)
+    if (!stored) return []
+    try {
+      return normalizeModules(JSON.parse(stored))
+    } catch {
+      return []
+    }
+  })
   const [authBusy, setAuthBusy] = useState(() => mode === 'real')
   const loadingAuth = mode === 'real' && authBusy
   const isAuthenticated = mode === 'demo' || Boolean(user)
@@ -74,6 +89,16 @@ export function RoleProvider({ children }) {
     }
     window.localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(user))
   }, [user])
+
+  useEffect(() => {
+    if (!modules.length) {
+      window.localStorage.removeItem(STORAGE_MODULES_KEY)
+      return
+    }
+    window.localStorage.setItem(STORAGE_MODULES_KEY, JSON.stringify(modules))
+  }, [modules])
+
+  const setModules = (next) => setModulesState(normalizeModules(next))
 
   useEffect(() => {
     if (mode === 'demo') {
@@ -165,86 +190,89 @@ export function RoleProvider({ children }) {
         setModeState('real')
         setAuthBusy(false)
       },
+      // Unified, module-driven login. ONE shared flow for every user:
+      // identity + role + modules come from the backend (staff_users.modules),
+      // and we acquire whatever per-module token the user actually needs.
       signIn: async ({ email, password }) => {
         if (!email || !password) {
           throw new Error('Informe e-mail e senha para entrar.')
         }
 
         const emailLower = String(email).toLowerCase().trim()
+        let identity = null // { id, email, full_name, role, modules }
+        let primaryErr = null
 
-        // Route 1: Secretaria/search users → Veritus API (local Postgres)
-        const isVeritusUser = ['aleff@cav.local', 'patricia@cav.local', 'gisele@cav.local', 'sirley@cav.local'].includes(emailLower)
-        if (isVeritusUser) {
+        // Primary identity via the Veritus API (:3001). It authenticates ALL
+        // active staff and returns role + modules — the source of truth.
+        try {
+          identity = await veritusApi.login(emailLower, password)
+        } catch (err) {
+          primaryErr = err
+        }
+
+        // If the search API is unreachable, fall back to the checkout API
+        // (:3333), which also authenticates against staff_users and returns
+        // role + modules (checkout-only users / checkout-only deployments).
+        if (!identity && isLocalCheckoutMode) {
           try {
-            const apiUser = await veritusApi.login(emailLower, password)
-            const apiRole = normalizeRole(apiUser.role)
-            setModeState('real')
-            setRoleState(apiRole)
-            setUser({ id: apiUser.id, email: apiUser.email, full_name: apiUser.full_name })
-            setAuthBusy(false)
-            return
+            identity = await localLogin(emailLower, password)
           } catch (err) {
-            if (err.message?.includes('HTTP')) {
-              throw new Error('Sistema de pesquisa indisponível. Verifique se o servidor local está ligado.')
-            }
-            throw err
+            primaryErr = err
           }
         }
 
-        // Route 2: Local checkout mode → local checkout server
-        if (isLocalCheckoutMode) {
-          const session = await localLogin(emailLower, password)
-          const localRole = normalizeRole(session.role)
-          setModeState('real')
-          setRoleState(localRole)
-          setUser({ id: session.id, email: session.email, full_name: session.full_name })
-          setAuthBusy(false)
-          return
-        }
-
-        // Route 3: Supabase auth (checkout users via Supabase)
-        if (hasSupabaseConfig && supabase) {
+        // Cloud fallback: Supabase auth (when no local servers are configured).
+        if (!identity && hasSupabaseConfig && supabase) {
           const { data, error } = await supabase.auth.signInWithPassword({ email: emailLower, password })
           if (error) throw error
           const authUser = data.user
-          const authRole = normalizeRole(
-            authUser?.user_metadata?.access_type ||
-              authUser?.user_metadata?.role ||
-              authUser?.app_metadata?.role,
-          )
-          setRoleState(authRole)
-          setModeState('real')
-          setUser({
+          identity = {
             id: authUser?.id,
             email: authUser?.email,
             full_name: authUser?.user_metadata?.full_name || authUser?.email || 'Usuário',
-          })
-          setAuthBusy(false)
-          return
+            role: authUser?.user_metadata?.access_type || authUser?.user_metadata?.role || authUser?.app_metadata?.role,
+            modules: authUser?.user_metadata?.modules,
+          }
         }
 
-        // Route 4: Fallback — try Veritus API for any email
-        try {
-          const apiUser = await veritusApi.login(emailLower, password)
-          const apiRole = normalizeRole(apiUser.role)
-          setModeState('real')
-          setRoleState(apiRole)
-          setUser({ id: apiUser.id, email: apiUser.email, full_name: apiUser.full_name })
-          setAuthBusy(false)
-          return
-        } catch { /* not available */ }
+        if (!identity) {
+          if (primaryErr?.message?.includes('HTTP') || /Failed to fetch|NetworkError/i.test(primaryErr?.message || '')) {
+            throw new Error('Servidor indisponível. Verifique se o servidor local está ligado.')
+          }
+          throw new Error(primaryErr?.message || 'Credenciais inválidas.')
+        }
 
-        throw new Error('Credenciais inválidas.')
+        const nextRole = normalizeRole(identity.role)
+        let nextModules = normalizeModules(identity.modules)
+        if (!nextModules.length) nextModules = deriveModulesFromRole(nextRole)
+
+        // Make sure the user holds a token for EACH module they can open, so
+        // Search and Checkout are never separate login systems.
+        if (nextModules.includes('checkout') && isLocalCheckoutMode && !localHasToken()) {
+          try { await localLogin(emailLower, password) } catch { /* checkout token best-effort */ }
+        }
+        if (nextModules.includes('search') && !veritusApi.isLoggedIn()) {
+          try { await veritusApi.login(emailLower, password) } catch { /* search token best-effort */ }
+        }
+
+        setModeState('real')
+        setRoleState(nextRole)
+        setModules(nextModules)
+        setUser({ id: identity.id, email: identity.email, full_name: identity.full_name })
+        setAuthBusy(false)
       },
       signOut: async () => {
         if (isLocalCheckoutMode) {
           await localLogout()
-        } else if (hasSupabaseConfig && supabase) {
+        }
+        if (hasSupabaseConfig && supabase) {
           await supabase.auth.signOut()
         }
         clearLocalToken()
+        veritusApi.logout()
         setModeState('real')
         setUser(null)
+        setModules([])
         setAuthBusy(false)
       },
       setRole: (nextRole) => {
@@ -253,8 +281,10 @@ export function RoleProvider({ children }) {
       },
       isRole: (candidateRole) => role === candidateRole,
       canAccess: (allowedRoles = []) => allowedRoles.includes(role),
+      modules,
+      hasModule: (moduleKey) => modules.includes(moduleKey),
     }),
-    [isAuthenticated, loadingAuth, mode, role, user],
+    [isAuthenticated, loadingAuth, mode, modules, role, user],
   )
 
   return <RoleContext.Provider value={value}>{children}</RoleContext.Provider>

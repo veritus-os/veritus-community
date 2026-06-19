@@ -31,39 +31,32 @@ import BugReporter from './components/BugReporter'
 import { FeatureFlagsProvider } from './core/config/featureFlagsContext'
 import StudentCheckoutPage from './pages/StudentCheckoutPage'
 import SearchPage from './pages/SearchPage'
+import HubPage from './pages/HubPage'
+import NoAccessPage from './pages/NoAccessPage'
+import ErrorBoundary from './components/ErrorBoundary'
 import { ModuleProvider, useModule } from './core/config/moduleContext'
+import { getAvailableModules } from './core/auth/permissions'
 
 function HomeRedirect() {
-  const { role, isAuthenticated, isDemoMode } = useRole()
+  const { role, modules, isAuthenticated, isDemoMode, mode, loadingAuth } = useRole()
   const mod = useModule()
 
-  // Module-specific home override
-  if (mod.id === 'checkout') {
-    if (!isAuthenticated) return <Navigate to="/login" replace />
-    return <Navigate to="/checkout" replace />
-  }
-  if (mod.id === 'search') {
-    if (!isAuthenticated) return <Navigate to="/login" replace />
-    return <Navigate to="/search" replace />
-  }
-
-  const homeByRole = {
-    super_admin: '/search',
-    admin: '/search',
-    secretaria: '/search',
-    reception: '/checkout',
-    infantil_coordination: '/checkout',
-    fundamental_coordination: '/checkout',
-    support: '/checkout',
-    cozinha: '/cozinha',
-    financeiro: '/finance',
-    professor: '/pedagogico',
-  }
-
   if (isDemoMode) return <Navigate to="/checkout-demo" replace />
+  if (mode === 'real' && loadingAuth) return null
   if (!isAuthenticated) return <Navigate to="/login" replace />
 
-  return <Navigate to={homeByRole[role] ?? '/families'} replace />
+  // staff_users.modules is the source of truth for what a user can open.
+  const available = getAvailableModules(modules, role)
+  const keys = new Set(available.map((m) => m.key))
+
+  // Honour a dedicated single-module deployment (out.* / ache.*) when the user
+  // actually has that module — otherwise fall through to the unified hub.
+  if (mod.id === 'checkout' && keys.has('checkout')) return <Navigate to="/checkout" replace />
+  if (mod.id === 'search' && keys.has('search')) return <Navigate to="/search" replace />
+
+  if (available.length === 0) return <Navigate to="/sem-acesso" replace />
+  if (available.length === 1) return <Navigate to={available[0].path} replace />
+  return <Navigate to="/hub" replace />
 }
 
 function App() {
@@ -73,6 +66,7 @@ function App() {
       <FeatureFlagsProvider>
       <EntityInfoProvider>
         <BugReporter />
+        <ErrorBoundary>
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<LoginPage />} />
@@ -90,12 +84,16 @@ function App() {
             }
           />
           <Route path="/home" element={<HomeRedirect />} />
+          {/* Unified internal hub — picks search/checkout/admin from modules. */}
+          <Route path="/hub" element={<HubPage />} />
+          <Route path="/app" element={<Navigate to="/hub" replace />} />
+          <Route path="/sem-acesso" element={<NoAccessPage />} />
           <Route
             path="/search"
             element={
               <ProtectedRoute
+                requireModule="search"
                 allowedRoles={['super_admin', 'admin', 'secretaria', 'support']}
-                redirectTo="/home"
               >
                 <SearchPage />
               </ProtectedRoute>
@@ -263,8 +261,8 @@ function App() {
           path="/checkout"
           element={
             <ProtectedRoute
+              requireModule="checkout"
               allowedRoles={['super_admin', 'admin', 'secretaria', 'professor', 'reception', 'infantil_coordination', 'fundamental_coordination', 'support']}
-              redirectTo="/home"
             >
               <StudentCheckoutPage />
             </ProtectedRoute>
@@ -290,6 +288,7 @@ function App() {
           <Route path="/biblioteca" element={<Navigate to="/patrimonio/biblioteca" replace />} />
           <Route path="*" element={<Navigate to="/home" replace />} />
         </Routes>
+        </ErrorBoundary>
       </EntityInfoProvider>
       </FeatureFlagsProvider>
     </RoleProvider>
