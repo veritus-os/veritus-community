@@ -290,6 +290,7 @@ export default function StudentCheckoutPage() {
   const realtimeEnabled = checkoutMonitorService.isRealtimeEnabled()
   const localFallbackEnabled = checkoutMonitorService.canUseLocalFallback()
   const lowEgressEnabled = checkoutMonitorService.isLowEgress()
+  const localApiMode = checkoutMonitorService.isLocalApiMode()
   const mutationsLocked = !actorId || (!realtimeEnabled && !localFallbackEnabled && !lowEgressEnabled)
   const canReset = !mutationsLocked && RESET_ROLES.includes(role)
 
@@ -373,6 +374,8 @@ export default function StudentCheckoutPage() {
       hasLoadedOnceRef.current = true
       setRows(boardRows)
       setLastSyncAt(Date.now())
+      // Board loaded from the local server → connected. Clear any prior notice.
+      if (localApiMode) setConnectionNotice('')
       if (freshIds.length > 0) {
         setFreshStudentIds(freshIds)
         triggerOperationalFeedback('call')
@@ -409,6 +412,10 @@ export default function StudentCheckoutPage() {
             if (document.visibilityState === 'visible') void loadData({ skipLogs: true })
           }, 30000)
         }
+      } else if (localApiMode) {
+        // Local-server mode: a failed load means :3333 is unreachable.
+        if (!hasLoadedOnceRef.current) setError(message)
+        setConnectionNotice('Servidor local offline')
       } else if (!hasLoadedOnceRef.current) {
         setError(message)
       } else {
@@ -900,14 +907,21 @@ export default function StudentCheckoutPage() {
     return actions
   }, [handleQuickReceptionCall, role, runStatusAction, selectedStudent, setFinalExitRow, view])
 
+  const syncSecondsAgo = lastSyncAt ? Math.max(1, Math.round((Date.now() - lastSyncAt) / 1000)) : null
   const syncStatusLabel = connectionNotice
     ? connectionNotice
-    : !realtimeEnabled && !lowEgressEnabled
-      ? 'Modo local'
-      : lastSyncAt && Date.now() - lastSyncAt > SYNC_STALE_MS
-        ? 'Dados desatualizados'
-        : ''
-  const syncStatusTone = connectionNotice ? 'rose' : 'amber'
+    : localApiMode
+      ? (lastSyncAt ? `Conectado • atualizado há ${syncSecondsAgo}s` : 'Conectado ao servidor local')
+      : !realtimeEnabled && !lowEgressEnabled
+        ? 'Modo local'
+        : lastSyncAt && Date.now() - lastSyncAt > SYNC_STALE_MS
+          ? 'Dados desatualizados'
+          : ''
+  const syncStatusTone = connectionNotice
+    ? 'rose'
+    : localApiMode
+      ? 'emerald'
+      : 'amber'
 
   return (
     <CheckoutShell
@@ -929,7 +943,16 @@ export default function StudentCheckoutPage() {
         </div>
       ) : null}
 
-      {!realtimeEnabled && !lowEgressEnabled && !isDemoMode ? (
+      {/* Local-server mode: only warn when :3333 is actually unreachable. */}
+      {localApiMode && connectionNotice === 'Servidor local offline' && !isDemoMode ? (
+        <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+          Servidor local indisponível (porta 3333). Verifique se o servidor da escola
+          está ligado — a tela tenta reconectar automaticamente.
+        </div>
+      ) : null}
+
+      {/* Legacy localStorage-only mode (dev) — not the school server. */}
+      {!localApiMode && !realtimeEnabled && !lowEgressEnabled && !isDemoMode ? (
         <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Modo offline — sincronização automática entre dispositivos indisponível.
         </div>

@@ -7,8 +7,24 @@
 
 // For multi-device: uses the same hostname the browser loaded from, port 3333.
 // Override with VITE_LOCAL_API_URL if the server runs on a different host/port.
-const BASE_URL = import.meta.env.VITE_LOCAL_API_URL ||
-  `${window.location.protocol}//${window.location.hostname}:3333`
+// A localhost-baked URL is ignored when viewed from a LAN device so other
+// computers reach the real server instead of their own machine.
+function resolveCheckoutBase(configured, port) {
+  const host = window.location.hostname
+  const derived = `${window.location.protocol}//${host}:${port}`
+  if (!configured) return derived
+  try {
+    const u = new URL(configured)
+    const cfgIsLocal = ['localhost', '127.0.0.1', '0.0.0.0'].includes(u.hostname)
+    const viewedLocal = ['localhost', '127.0.0.1'].includes(host)
+    if (cfgIsLocal && !viewedLocal) return derived
+    return configured
+  } catch {
+    return derived
+  }
+}
+
+const BASE_URL = resolveCheckoutBase(import.meta.env.VITE_LOCAL_API_URL, 3333)
 const TOKEN_KEY = 'cav_local_checkout_token'
 
 function getToken() {

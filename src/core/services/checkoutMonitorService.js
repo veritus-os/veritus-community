@@ -382,6 +382,12 @@ export class CheckoutMonitorService {
     return this.lowEgress
   }
 
+  // True when reading/writing the local Checkout API (:3333) backed by the
+  // local PostgreSQL — the production-local mode on the school server.
+  isLocalApiMode() {
+    return this.useLocalApi
+  }
+
   canUseLocalFallback() {
     return this.allowLocalFallback || this.useLocalApi
   }
