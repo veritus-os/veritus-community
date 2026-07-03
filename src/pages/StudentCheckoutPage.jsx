@@ -1905,9 +1905,9 @@ const StudentCard = memo(function StudentCard({
         </div>
       </div>
 
-      {row.activities.length ? (
+      {(row.activities ?? []).length ? (
         <div className="mt-3 flex flex-wrap gap-2">
-          {row.activities.map((item) => (
+          {(row.activities ?? []).map((item) => (
             <span key={item} className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">{item}</span>
           ))}
         </div>
@@ -2141,7 +2141,7 @@ function areQueueRowPropsEqual(prev, next) {
     left.class_name === right.class_name &&
     left.campus === right.campus &&
     left.family_name === right.family_name &&
-    left.activities.join('|') === right.activities.join('|') &&
+    (left.activities ?? []).join('|') === (right.activities ?? []).join('|') &&
     left.authorized_guardians.map((item) => item.full_name).join('|') === right.authorized_guardians.map((item) => item.full_name).join('|')
   )
 }
