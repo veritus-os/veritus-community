@@ -51,6 +51,12 @@ const CHECKOUT_VIEWS_BY_ROLE = {
   professor: ['classroom'],
 }
 
+// Coordenação é travada na própria sede (campus); recepção/suporte/admin veem todas.
+const LOCKED_CAMPUS_BY_ROLE = {
+  infantil_coordination: 'Sede Infantil',
+  fundamental_coordination: 'Sede Fundamental',
+}
+
 function getDefaultCheckoutView(role) {
   if (role === 'support') return 'support'
   if (role === 'infantil_coordination' || role === 'fundamental_coordination' || role === 'professor') return 'classroom'
@@ -231,6 +237,7 @@ function canRunClassroomAction(row, actionKey) {
 
 export default function StudentCheckoutPage() {
   const { role, user, isDemoMode } = useRole()
+  const lockedCampus = LOCKED_CAMPUS_BY_ROLE[role] || null
   const [view, setView] = useState(() => getDefaultCheckoutView(role))
   const [layoutMode, setLayoutMode] = useState(() => {
     const stored = window.localStorage.getItem(LAYOUT_STORAGE_KEY)
@@ -239,7 +246,7 @@ export default function StudentCheckoutPage() {
   })
   const [rows, setRows] = useState([])
   const [logs, setLogs] = useState([])
-  const [campus, setCampus] = useState('todos')
+  const [campus, setCampus] = useState(lockedCampus || 'todos')
   const [turno, setTurno] = useState('todos')
   const [classFilter, setClassFilter] = useState('all')
   const [searchDraft, setSearchDraft] = useState('')
@@ -483,6 +490,11 @@ export default function StudentCheckoutPage() {
       setView(getDefaultCheckoutView(role))
     }
   }, [role, view])
+
+  // Coordenação fica travada na sua sede; reforça o escopo se o papel resolver após o mount.
+  useEffect(() => {
+    if (lockedCampus) setCampus(lockedCampus)
+  }, [lockedCampus])
 
   useEffect(() => {
     if (view === 'reception') {
@@ -1052,6 +1064,11 @@ export default function StudentCheckoutPage() {
               Resetar dia
             </button>
           </div>
+          {lockedCampus && (
+            <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+              Sede: {lockedCampus}
+            </span>
+          )}
         </div>
       </section>
 
