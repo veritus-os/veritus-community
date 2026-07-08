@@ -61,6 +61,10 @@ const ALLOWED_TRANSITIONS = {
   absent: ['at_school'], left_school: ['at_school'],
 }
 
+// Coordenação atua/vê só na sua sede (segment). Demais papéis (recepção/suporte/admin) veem todas.
+// Alunos sem segment (NULL) ficam visíveis a todos — nunca somem do painel.
+const COORD_SEGMENT = { infantil_coordination: 'infantil', fundamental_coordination: 'fundamental' }
+
 // --- HTTP helpers ---
 function json(res, code, body) {
   res.writeHead(code, {
@@ -215,15 +219,23 @@ async function handle(req, res) {
   if (!user) return json(res, 401, { error: 'Não autenticado.' })
 
   if (method === 'GET' && path === '/api/checkout/board') {
-    const { rows } = await pool.query(`SELECT * FROM checkout.v_board ORDER BY class_name, full_name`)
+    const seg = COORD_SEGMENT[user.role] || null
+    const { rows } = seg
+      ? await pool.query(
+          `SELECT * FROM checkout.v_board WHERE segment = $1 OR segment IS NULL ORDER BY class_name, full_name`, [seg])
+      : await pool.query(`SELECT * FROM checkout.v_board ORDER BY class_name, full_name`)
     return json(res, 200, { rows, version: await getVersion() })
   }
 
   if (method === 'GET' && path === '/api/checkout/classes') {
+    const seg = COORD_SEGMENT[user.role] || null
+    const params = []
+    let where = `active AND class_name IS NOT NULL`
+    if (seg) { params.push(seg); where += ` AND (segment = $1 OR segment IS NULL)` }
     const { rows } = await pool.query(
       `SELECT DISTINCT class_name AS name, segment,
               CASE segment WHEN 'infantil' THEN 'Sede Infantil' WHEN 'fundamental' THEN 'Sede Fundamental' ELSE 'Sede' END AS campus
-       FROM public.students WHERE active AND class_name IS NOT NULL ORDER BY class_name`)
+       FROM public.students WHERE ${where} ORDER BY class_name`, params)
     return json(res, 200, { rows })
   }
 
@@ -260,6 +272,11 @@ async function handle(req, res) {
        FROM public.students s WHERE s.id = $1 AND s.active`, [sid])
     const student = srows[0]
     if (!student) return json(res, 404, { error: 'Aluno não encontrado.' })
+
+    // Escopo por sede: coordenação só atua na própria sede. Aluno sem segment fica liberado a todos.
+    const seg = COORD_SEGMENT[user.role] || null
+    if (seg && student.segment && student.segment !== seg)
+      return json(res, 403, { error: 'Aluno de outra sede — ação não permitida para sua coordenação.' })
 
     const { rows: drows } = await pool.query(
       `SELECT * FROM checkout.checkout_daily WHERE student_id = $1 AND checkout_date = $2`, [sid, today])
