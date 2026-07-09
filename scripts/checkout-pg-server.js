@@ -44,21 +44,31 @@ const JWT_SECRET = loadJwtSecret()
 const RECEPTION_ROLES = ['super_admin', 'admin', 'secretaria', 'reception', 'support']
 const CLASSROOM_ROLES = ['super_admin', 'admin', 'secretaria', 'professor', 'infantil_coordination', 'fundamental_coordination', 'support']
 const RESET_ROLES = ['super_admin', 'admin', 'secretaria']
+const ALL_ROLES = [...new Set([...RECEPTION_ROLES, ...CLASSROOM_ROLES])]
+// Reverter (→ at_school): qualquer operador do fluxo. Coordenação segue limitada
+// à própria sede pelo escopo por segment (403) na transição.
+const REVERT_ROLES = ALL_ROLES
 const STATUS_ROLE_RULES = {
-  at_school: RESET_ROLES, absent: RESET_ROLES,
-  guardian_arrived: RECEPTION_ROLES, preparing_release: CLASSROOM_ROLES,
-  ready_for_pickup: CLASSROOM_ROLES, released_from_classroom: CLASSROOM_ROLES,
-  left_school: RECEPTION_ROLES,
-  needs_verification: [...new Set([...RECEPTION_ROLES, ...CLASSROOM_ROLES])],
+  at_school: REVERT_ROLES, absent: RESET_ROLES,
+  guardian_arrived: RECEPTION_ROLES,
+  released_from_classroom: CLASSROOM_ROLES, // sede libera; coordenação limitada à sede pelo 403
+  // TEMP: qualquer autenticado confirma saída até criarmos o papel portaria/vigia.
+  // Accountability preservada pelo log (changed_by_name/changed_by_user_id em checkout_logs).
+  left_school: ALL_ROLES,
+  needs_verification: ALL_ROLES,
+  // compat legado — não são mais alvo de novas transições; mantidos para não travar
+  // alunos que já estivessem nesses estados no momento do deploy.
+  preparing_release: CLASSROOM_ROLES, ready_for_pickup: CLASSROOM_ROLES,
 }
 const ALLOWED_TRANSITIONS = {
   at_school: ['guardian_arrived', 'needs_verification', 'absent'],
-  guardian_arrived: ['at_school', 'preparing_release', 'ready_for_pickup', 'needs_verification'],
-  preparing_release: ['at_school', 'ready_for_pickup', 'needs_verification'],
-  ready_for_pickup: ['at_school', 'released_from_classroom', 'needs_verification'],
+  guardian_arrived: ['at_school', 'released_from_classroom', 'needs_verification'],
   released_from_classroom: ['at_school', 'left_school', 'needs_verification'],
-  needs_verification: ['at_school', 'guardian_arrived', 'preparing_release', 'ready_for_pickup', 'released_from_classroom'],
+  needs_verification: ['at_school', 'guardian_arrived', 'released_from_classroom'],
   absent: ['at_school'], left_school: ['at_school'],
+  // compat legado: deixa qualquer aluno preso em estado antigo avançar/sair.
+  preparing_release: ['at_school', 'released_from_classroom', 'needs_verification'],
+  ready_for_pickup: ['at_school', 'released_from_classroom', 'needs_verification'],
 }
 
 // Coordenação atua/vê só na sua sede (segment). Demais papéis (recepção/suporte/admin) veem todas.

@@ -19,6 +19,15 @@ const VIEW_OPTIONS = [
 const DEVICE_STORAGE_KEY = 'veritus_checkout_device_label'
 const LAYOUT_STORAGE_KEY = 'veritus_checkout_layout_mode'
 const RESET_ROLES = ['super_admin', 'admin', 'secretaria']
+const RECEPTION_ROLES = ['super_admin', 'admin', 'secretaria', 'reception', 'support']
+const CLASSROOM_ROLES = ['super_admin', 'admin', 'secretaria', 'professor', 'infantil_coordination', 'fundamental_coordination', 'support']
+// Reverter (→ em aula): qualquer operador do fluxo; coordenação segue limitada à
+// própria sede pelo escopo por segment (403) no servidor.
+const REVERT_ROLES = [...new Set([...RECEPTION_ROLES, ...CLASSROOM_ROLES])]
+const REVERTIBLE_STATUSES = ['guardian_arrived', 'preparing_release', 'ready_for_pickup', 'released_from_classroom', 'left_school', 'needs_verification', 'absent']
+function canRevert(row, role) {
+  return Boolean(row) && REVERTIBLE_STATUSES.includes(row.status) && REVERT_ROLES.includes(role)
+}
 const ACTIVE_WAITING_STATUSES = ['guardian_arrived', 'preparing_release', 'ready_for_pickup', 'released_from_classroom']
 const COORDINATION_STATUSES = ['guardian_arrived', 'preparing_release', 'ready_for_pickup', 'released_from_classroom', 'needs_verification']
 const LOG_FILTERS = [
@@ -220,14 +229,11 @@ function canRunReceptionAction(row, actionKey) {
 }
 
 function canRunClassroomAction(row, actionKey) {
-  if (actionKey === 'preparing_release') {
-    return ['guardian_arrived', 'needs_verification'].includes(row.status)
-  }
-  if (actionKey === 'ready_for_pickup') {
-    return ['guardian_arrived', 'preparing_release', 'needs_verification'].includes(row.status)
-  }
   if (actionKey === 'released_from_classroom') {
-    return ['ready_for_pickup', 'needs_verification'].includes(row.status)
+    // Sede libera direto do "chamado" (removidos preparing/ready). needs_verification também pode liberar.
+    // preparing_release/ready_for_pickup ficam como compat: se um aluno já estava nesses
+    // estados no deploy, a sede ainda consegue liberá-lo (avançar), sem estado morto.
+    return ['guardian_arrived', 'needs_verification', 'preparing_release', 'ready_for_pickup'].includes(row.status)
   }
   if (actionKey === 'needs_verification') {
     return row.status !== 'absent' && row.status !== 'left_school'
@@ -256,6 +262,7 @@ export default function StudentCheckoutPage() {
   const [manualPickupByStudent, setManualPickupByStudent] = useState({})
   const [notesByStudent, setNotesByStudent] = useState({})
   const [finalExitRow, setFinalExitRow] = useState(null)
+  const [revertRow, setRevertRow] = useState(null)
   const [resetPending, setResetPending] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
@@ -792,6 +799,18 @@ export default function StudentCheckoutPage() {
     }
   }
 
+  async function confirmRevert() {
+    if (!revertRow) return
+    // Reverter = voltar para "em aula". Reusa a transição (logada) e o escopo por sede (403).
+    const succeeded = await runStatusAction(revertRow, 'at_school', {
+      confirmed: true,
+      note: `Reversão de ${getCheckoutStatusLabel(revertRow.status)}`,
+    })
+    if (succeeded) {
+      setRevertRow(null)
+    }
+  }
+
   async function confirmResetStatuses() {
     try {
       setSubmitting(true)
@@ -881,27 +900,6 @@ export default function StudentCheckoutPage() {
         onClick: () => handleQuickReceptionCall(selectedStudent),
       })
     }
-    if ((allowReception || allowClassroom) && canRunReceptionAction(selectedStudent, 'needs_verification')) {
-      actions.push({
-        label: 'Retirada excepcional',
-        tone: 'rose',
-        onClick: () => void runStatusAction(selectedStudent, 'needs_verification'),
-      })
-    }
-    if (allowClassroom && canRunClassroomAction(selectedStudent, 'preparing_release')) {
-      actions.push({
-        label: 'Preparar liberação',
-        tone: 'sky',
-        onClick: () => void runStatusAction(selectedStudent, 'preparing_release'),
-      })
-    }
-    if (allowClassroom && canRunClassroomAction(selectedStudent, 'ready_for_pickup')) {
-      actions.push({
-        label: 'Pronto para retirada',
-        tone: 'cyan',
-        onClick: () => void runStatusAction(selectedStudent, 'ready_for_pickup'),
-      })
-    }
     if (allowClassroom && canRunClassroomAction(selectedStudent, 'released_from_classroom')) {
       actions.push({
         label: 'Liberar da sala',
@@ -911,13 +909,48 @@ export default function StudentCheckoutPage() {
     }
     if (allowReception && canRunReceptionAction(selectedStudent, 'left_school')) {
       actions.push({
-        label: 'Confirmar saída final',
+        label: 'Confirmar saída',
         tone: 'emerald',
         onClick: () => setFinalExitRow(selectedStudent),
       })
     }
+    if ((allowReception || allowClassroom) && canRunReceptionAction(selectedStudent, 'needs_verification')) {
+      actions.push({
+        label: 'Retirada excepcional',
+        tone: 'rose',
+        onClick: () => void runStatusAction(selectedStudent, 'needs_verification'),
+      })
+    }
+    if (canRevert(selectedStudent, role)) {
+      actions.push({
+        label: 'Reverter',
+        tone: 'slate',
+        onClick: () => setRevertRow(selectedStudent),
+      })
+    }
     return actions
   }, [handleQuickReceptionCall, role, runStatusAction, selectedStudent, setFinalExitRow, view])
+
+  // Ações contextuais do cartão por papel/estado — a lista mostra a primeira visível
+  // como ação primária; a grade mostra todas. Recepção e sede veem só o que podem fazer.
+  const buildReceptionActions = (row) => [
+    { label: 'Chamar', tone: 'amber', hidden: !canRunReceptionAction(row, 'guardian_arrived'),
+      onClick: () => handleQuickReceptionCall(row) },
+    { label: 'Confirmar saída', tone: 'emerald', hidden: !canRunReceptionAction(row, 'left_school'),
+      onClick: () => setFinalExitRow(row) },
+    { label: 'Reverter', tone: 'slate', hidden: !canRevert(row, role),
+      onClick: () => setRevertRow(row) },
+    { label: 'Detalhes', tone: 'slate', hidden: false,
+      onClick: () => openStudentDetails(row.student_id) },
+  ]
+  const buildClassroomActions = (row) => [
+    { label: 'Liberar da sala', tone: 'violet', hidden: !canRunClassroomAction(row, 'released_from_classroom'),
+      onClick: () => void runStatusAction(row, 'released_from_classroom') },
+    { label: 'Reverter', tone: 'slate', hidden: !canRevert(row, role),
+      onClick: () => setRevertRow(row) },
+    { label: 'Detalhes', tone: 'slate', hidden: false,
+      onClick: () => openStudentDetails(row.student_id) },
+  ]
 
   const syncSecondsAgo = lastSyncAt ? Math.max(1, Math.round((Date.now() - lastSyncAt) / 1000)) : null
   const syncStatusLabel = connectionNotice
@@ -1117,14 +1150,7 @@ export default function StudentCheckoutPage() {
                 highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
                 readOnly={mutationsLocked || busyStudentIds.has(Number(row.student_id))}
                 busy={busyStudentIds.has(Number(row.student_id))}
-                actions={[
-                  {
-                    label: 'Chamar',
-                    onClick: () => handleQuickReceptionCall(row),
-                    tone: 'amber',
-                    hidden: !canRunReceptionAction(row, 'guardian_arrived'),
-                  },
-                ]}
+                actions={buildReceptionActions(row)}
               />
             ))}
           </div>
@@ -1151,20 +1177,7 @@ export default function StudentCheckoutPage() {
                 highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
                 readOnly={mutationsLocked || busyStudentIds.has(Number(row.student_id))}
                 busy={busyStudentIds.has(Number(row.student_id))}
-                actions={[
-                  {
-                    label: 'Chamar',
-                    onClick: () => handleQuickReceptionCall(row),
-                    tone: 'amber',
-                    hidden: !canRunReceptionAction(row, 'guardian_arrived'),
-                  },
-                  {
-                    label: 'Detalhes',
-                    onClick: () => openStudentDetails(row.student_id),
-                    tone: 'slate',
-                    hidden: false,
-                  },
-                ]}
+                actions={buildReceptionActions(row)}
               />
             ))}
           </div>
@@ -1197,14 +1210,7 @@ export default function StudentCheckoutPage() {
                 compactReceptionFields
                 readOnly={mutationsLocked || busyStudentIds.has(Number(row.student_id))}
                 busy={busyStudentIds.has(Number(row.student_id))}
-                actions={[
-                  {
-                    label: 'Preparar liberação',
-                    onClick: () => runStatusAction(row, 'preparing_release'),
-                    tone: 'sky',
-                    hidden: !canRunClassroomAction(row, 'preparing_release'),
-                  },
-                ]}
+                actions={buildClassroomActions(row)}
               />
             ))}
           </div>
@@ -1232,20 +1238,7 @@ export default function StudentCheckoutPage() {
                 compactReceptionFields
                 readOnly={mutationsLocked || busyStudentIds.has(Number(row.student_id))}
                 busy={busyStudentIds.has(Number(row.student_id))}
-                actions={[
-                  {
-                    label: 'Preparar liberação',
-                    onClick: () => runStatusAction(row, 'preparing_release'),
-                    tone: 'sky',
-                    hidden: !canRunClassroomAction(row, 'preparing_release'),
-                  },
-                  {
-                    label: 'Detalhes',
-                    onClick: () => openStudentDetails(row.student_id),
-                    tone: 'slate',
-                    hidden: false,
-                  },
-                ]}
+                actions={buildClassroomActions(row)}
               />
             ))}
           </div>
@@ -1430,6 +1423,34 @@ export default function StudentCheckoutPage() {
             <p>
               Retirada registrada: <strong>{finalExitRow.pickup_guardian_name || finalExitRow.pickup_person_name || 'não informada'}</strong>
             </p>
+          </div>
+        ) : null}
+      </ConfirmationDialog>
+
+      <ConfirmationDialog
+        open={Boolean(revertRow)}
+        title="Reverter ação"
+        confirmLabel="Reverter"
+        tone="slate"
+        busy={submitting}
+        onCancel={() => setRevertRow(null)}
+        onConfirm={() => void confirmRevert()}
+      >
+        {revertRow ? (
+          <div className="space-y-2 text-sm text-slate-700">
+            <p>Reverter a ação de <strong>{revertRow.full_name}</strong>?</p>
+            <p>
+              Situação atual: <strong>{getCheckoutStatusLabel(revertRow.status)}</strong> → voltará para <strong>Na escola</strong>.
+            </p>
+            {revertRow.status === 'left_school' ? (
+              <p className="font-semibold text-rose-700">
+                Isto desfaz uma <strong>saída já confirmada</strong>: o aluno volta a aparecer como presente. A ação fica registrada no histórico.
+              </p>
+            ) : (
+              <p className="text-slate-500">
+                Os dados desta etapa (responsável, horários, observações) serão limpos. A ação fica registrada no histórico.
+              </p>
+            )}
           </div>
         ) : null}
       </ConfirmationDialog>
