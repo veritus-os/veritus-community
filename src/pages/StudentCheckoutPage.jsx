@@ -17,7 +17,6 @@ const VIEW_OPTIONS = [
 ]
 
 const DEVICE_STORAGE_KEY = 'veritus_checkout_device_label'
-const LAYOUT_STORAGE_KEY = 'veritus_checkout_layout_mode'
 const RESET_ROLES = ['super_admin', 'admin', 'secretaria']
 const RECEPTION_ROLES = ['super_admin', 'admin', 'secretaria', 'reception', 'support']
 const CLASSROOM_ROLES = ['super_admin', 'admin', 'secretaria', 'professor', 'infantil_coordination', 'fundamental_coordination', 'support']
@@ -241,15 +240,15 @@ function canRunClassroomAction(row, actionKey) {
   return false
 }
 
+function matchesStatusFilter(row, statusFilter) {
+  if (statusFilter === 'waiting') return ACTIVE_WAITING_STATUSES.includes(row.status)
+  return row.status === statusFilter
+}
+
 export default function StudentCheckoutPage() {
   const { role, user, isDemoMode } = useRole()
   const lockedCampus = LOCKED_CAMPUS_BY_ROLE[role] || null
   const [view, setView] = useState(() => getDefaultCheckoutView(role))
-  const [layoutMode, setLayoutMode] = useState(() => {
-    const stored = window.localStorage.getItem(LAYOUT_STORAGE_KEY)
-    if (stored === 'cards' || stored === 'list') return stored
-    return isDemoMode ? 'cards' : 'list'
-  })
   const [rows, setRows] = useState([])
   const [logs, setLogs] = useState([])
   const [campus, setCampus] = useState(lockedCampus || 'todos')
@@ -263,6 +262,9 @@ export default function StudentCheckoutPage() {
   const [notesByStudent, setNotesByStudent] = useState({})
   const [finalExitRow, setFinalExitRow] = useState(null)
   const [revertRow, setRevertRow] = useState(null)
+  const [statusFilter, setStatusFilter] = useState(null) // 'at_school'|'waiting'|'needs_verification'|'left_school'|null
+  const [visibleLogCount, setVisibleLogCount] = useState(25)
+  const [collapsedDays, setCollapsedDays] = useState(() => new Set())
   const [resetPending, setResetPending] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
@@ -316,10 +318,6 @@ export default function StudentCheckoutPage() {
     }
     window.localStorage.setItem(DEVICE_STORAGE_KEY, deviceLabel)
   }, [deviceLabel])
-
-  useEffect(() => {
-    window.localStorage.setItem(LAYOUT_STORAGE_KEY, layoutMode)
-  }, [layoutMode])
 
   useEffect(() => {
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
@@ -634,12 +632,17 @@ export default function StudentCheckoutPage() {
     }
   }, [classFilter, classOptions])
 
-  const receptionRows = useMemo(() => filteredRows.filter((row) => row.status !== 'absent' && row.status !== 'left_school'), [filteredRows])
+  const receptionRows = useMemo(() => (
+    statusFilter
+      ? filteredRows.filter((row) => matchesStatusFilter(row, statusFilter))
+      : filteredRows.filter((row) => row.status !== 'absent' && row.status !== 'left_school')
+  ), [filteredRows, statusFilter])
 
-  const classroomRows = useMemo(
-    () => filteredRows.filter((row) => COORDINATION_STATUSES.includes(row.status)),
-    [filteredRows],
-  )
+  const classroomRows = useMemo(() => (
+    statusFilter
+      ? filteredRows.filter((row) => matchesStatusFilter(row, statusFilter))
+      : filteredRows.filter((row) => COORDINATION_STATUSES.includes(row.status))
+  ), [filteredRows, statusFilter])
 
   const filteredLogs = useMemo(() => {
     return logs.filter((row) => {
@@ -655,6 +658,21 @@ export default function StudentCheckoutPage() {
     })
   }, [campus, logs, query, supportLogFrom, supportLogPeriod, supportLogTo])
 
+  // Reinicia paginação/colapso do histórico quando o filtro de logs muda.
+  useEffect(() => {
+    setVisibleLogCount(25)
+    setCollapsedDays(new Set())
+  }, [supportLogPeriod, supportLogFrom, supportLogTo, campus, query])
+
+  function toggleDay(label) {
+    setCollapsedDays((prev) => {
+      const next = new Set(prev)
+      if (next.has(label)) next.delete(label)
+      else next.add(label)
+      return next
+    })
+  }
+
   const summary = useMemo(() => {
     return {
       totalAtSchool: rows.filter((row) => row.status === 'at_school').length,
@@ -665,7 +683,6 @@ export default function StudentCheckoutPage() {
     }
   }, [rows])
 
-  const useListLayout = layoutMode === 'list'
   const selectedStudentBusy = selectedStudent ? busyStudentIds.has(Number(selectedStudent.student_id)) : false
 
   function openStudentDetails(studentId) {
@@ -1005,15 +1022,16 @@ export default function StudentCheckoutPage() {
 
       <section className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
-          <SummaryPill label="Na escola" value={summary.totalAtSchool} tone="slate" />
-          <SummaryPill label="Aguardando" value={summary.totalWaiting} tone="amber" />
-          <SummaryPill label="Verificação" value={summary.totalVerification} tone="rose" />
-          <SummaryPill label="Saíram hoje" value={summary.totalLeft} tone="emerald" />
+          <SummaryPill label="Todos" value={rows.length} tone="slate" active={!statusFilter} onClick={() => setStatusFilter(null)} />
+          <SummaryPill label="Na escola" value={summary.totalAtSchool} tone="slate" active={statusFilter === 'at_school'} onClick={() => setStatusFilter((f) => (f === 'at_school' ? null : 'at_school'))} />
+          <SummaryPill label="Aguardando" value={summary.totalWaiting} tone="amber" active={statusFilter === 'waiting'} onClick={() => setStatusFilter((f) => (f === 'waiting' ? null : 'waiting'))} />
+          <SummaryPill label="Verificação" value={summary.totalVerification} tone="rose" active={statusFilter === 'needs_verification'} onClick={() => setStatusFilter((f) => (f === 'needs_verification' ? null : 'needs_verification'))} />
+          <SummaryPill label="Saíram hoje" value={summary.totalLeft} tone="emerald" active={statusFilter === 'left_school'} onClick={() => setStatusFilter((f) => (f === 'left_school' ? null : 'left_school'))} />
         </div>
       </section>
 
       <section className="sticky top-[4.4rem] z-20 mb-4 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur sm:top-[4.8rem]">
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(170px,0.8fr)_minmax(220px,1fr)_auto]">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(170px,0.8fr)_minmax(220px,1fr)]">
           <div className="relative">
             <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Busca rápida</label>
             <Search className="pointer-events-none absolute left-3 top-[2.35rem] h-4 w-4 text-slate-400" />
@@ -1063,24 +1081,6 @@ export default function StudentCheckoutPage() {
               ))}
             </select>
           </div>
-          <div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className={`rounded-full px-3 py-2 text-xs font-semibold ${layoutMode === 'list' ? 'bg-sky-700 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
-                onClick={() => setLayoutMode('list')}
-              >
-                Lista
-              </button>
-              <button
-                type="button"
-                className={`rounded-full px-3 py-2 text-xs font-semibold ${layoutMode === 'cards' ? 'bg-sky-700 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
-                onClick={() => setLayoutMode('cards')}
-              >
-                Cards
-              </button>
-            </div>
-          </div>
         </div>
         <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -1126,123 +1126,64 @@ export default function StudentCheckoutPage() {
       {initialLoading ? <LoadingRow text="Carregando monitor de saída..." /> : null}
 
       {!initialLoading && view === 'reception' ? (
-        useListLayout ? (
-          <div className="space-y-3">
-            {!receptionRows.length ? (
-              <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-6 text-sm text-slate-500">
-                Nenhum aluno na fila com os filtros atuais.
-              </div>
-            ) : null}
-            {receptionRows.map((row) => (
-              <CheckoutQueueRow
-                key={row.student_id}
-                row={row}
-                mode="reception"
-                notesByStudent={notesByStudent}
-                setNotesByStudent={setNotesByStudent}
-                pickupGuardianByStudent={pickupGuardianByStudent}
-                setPickupGuardianByStudent={setPickupGuardianByStudent}
-                manualPickupByStudent={manualPickupByStudent}
-                setManualPickupByStudent={setManualPickupByStudent}
-                authorizedByByStudent={authorizedByByStudent}
-                setAuthorizedByByStudent={setAuthorizedByByStudent}
-                onOpenProfile={() => openStudentDetails(row.student_id)}
-                highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
-                readOnly={mutationsLocked || busyStudentIds.has(Number(row.student_id))}
-                busy={busyStudentIds.has(Number(row.student_id))}
-                actions={buildReceptionActions(row)}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="grid gap-4 xl:grid-cols-2">
-            {!receptionRows.length ? (
-              <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-6 text-sm text-slate-500 xl:col-span-2">
-                Nenhum aluno na fila com os filtros atuais.
-              </div>
-            ) : null}
-            {receptionRows.map((row) => (
-              <StudentCard
-                key={row.student_id}
-                row={row}
-                notesByStudent={notesByStudent}
-                setNotesByStudent={setNotesByStudent}
-                pickupGuardianByStudent={pickupGuardianByStudent}
-                setPickupGuardianByStudent={setPickupGuardianByStudent}
-                manualPickupByStudent={manualPickupByStudent}
-                setManualPickupByStudent={setManualPickupByStudent}
-                authorizedByByStudent={authorizedByByStudent}
-                setAuthorizedByByStudent={setAuthorizedByByStudent}
-                onOpenProfile={() => openStudentDetails(row.student_id)}
-                highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
-                readOnly={mutationsLocked || busyStudentIds.has(Number(row.student_id))}
-                busy={busyStudentIds.has(Number(row.student_id))}
-                actions={buildReceptionActions(row)}
-              />
-            ))}
-          </div>
-        )
+        <div className="space-y-3">
+          {!receptionRows.length ? (
+            <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-6 text-sm text-slate-500">
+              Nenhum aluno na fila com os filtros atuais.
+            </div>
+          ) : null}
+          {receptionRows.map((row) => (
+            <CheckoutQueueRow
+              key={row.student_id}
+              row={row}
+              mode="reception"
+              notesByStudent={notesByStudent}
+              setNotesByStudent={setNotesByStudent}
+              pickupGuardianByStudent={pickupGuardianByStudent}
+              setPickupGuardianByStudent={setPickupGuardianByStudent}
+              manualPickupByStudent={manualPickupByStudent}
+              setManualPickupByStudent={setManualPickupByStudent}
+              authorizedByByStudent={authorizedByByStudent}
+              setAuthorizedByByStudent={setAuthorizedByByStudent}
+              onOpenProfile={() => openStudentDetails(row.student_id)}
+              highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
+              readOnly={mutationsLocked || busyStudentIds.has(Number(row.student_id))}
+              busy={busyStudentIds.has(Number(row.student_id))}
+              actions={buildReceptionActions(row)}
+            />
+          ))}
+        </div>
       ) : null}
 
       {!initialLoading && view === 'classroom' ? (
-        useListLayout ? (
-          <div className="space-y-3">
-            {!classroomRows.length ? (
-              <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-6 text-sm text-slate-500">
-                Nenhum aluno pendente para a equipe com os filtros atuais.
-              </div>
-            ) : null}
-            {classroomRows.map((row) => (
-              <CheckoutQueueRow
-                key={row.student_id}
-                row={row}
-                mode="classroom"
-                notesByStudent={notesByStudent}
-                setNotesByStudent={setNotesByStudent}
-                pickupGuardianByStudent={pickupGuardianByStudent}
-                setPickupGuardianByStudent={setPickupGuardianByStudent}
-                manualPickupByStudent={manualPickupByStudent}
-                setManualPickupByStudent={setManualPickupByStudent}
-                authorizedByByStudent={authorizedByByStudent}
-                setAuthorizedByByStudent={setAuthorizedByByStudent}
-                onOpenProfile={() => openStudentDetails(row.student_id)}
-                highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
-                compactReceptionFields
-                readOnly={mutationsLocked || busyStudentIds.has(Number(row.student_id))}
-                busy={busyStudentIds.has(Number(row.student_id))}
-                actions={buildClassroomActions(row)}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="grid gap-4 xl:grid-cols-2">
-            {!classroomRows.length ? (
-              <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-6 text-sm text-slate-500 xl:col-span-2">
-                Nenhum aluno pendente para a equipe com os filtros atuais.
-              </div>
-            ) : null}
-            {classroomRows.map((row) => (
-              <StudentCard
-                key={row.student_id}
-                row={row}
-                notesByStudent={notesByStudent}
-                setNotesByStudent={setNotesByStudent}
-                pickupGuardianByStudent={pickupGuardianByStudent}
-                setPickupGuardianByStudent={setPickupGuardianByStudent}
-                manualPickupByStudent={manualPickupByStudent}
-                setManualPickupByStudent={setManualPickupByStudent}
-                authorizedByByStudent={authorizedByByStudent}
-                setAuthorizedByByStudent={setAuthorizedByByStudent}
-                onOpenProfile={() => openStudentDetails(row.student_id)}
-                highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
-                compactReceptionFields
-                readOnly={mutationsLocked || busyStudentIds.has(Number(row.student_id))}
-                busy={busyStudentIds.has(Number(row.student_id))}
-                actions={buildClassroomActions(row)}
-              />
-            ))}
-          </div>
-        )
+        <div className="space-y-3">
+          {!classroomRows.length ? (
+            <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-6 text-sm text-slate-500">
+              Nenhum aluno pendente para a equipe com os filtros atuais.
+            </div>
+          ) : null}
+          {classroomRows.map((row) => (
+            <CheckoutQueueRow
+              key={row.student_id}
+              row={row}
+              mode="classroom"
+              notesByStudent={notesByStudent}
+              setNotesByStudent={setNotesByStudent}
+              pickupGuardianByStudent={pickupGuardianByStudent}
+              setPickupGuardianByStudent={setPickupGuardianByStudent}
+              manualPickupByStudent={manualPickupByStudent}
+              setManualPickupByStudent={setManualPickupByStudent}
+              authorizedByByStudent={authorizedByByStudent}
+              setAuthorizedByByStudent={setAuthorizedByByStudent}
+              onOpenProfile={() => openStudentDetails(row.student_id)}
+              highlight={freshStudentIds.includes(Number(row.student_id)) || row.status === 'needs_verification'}
+              compactReceptionFields
+              readOnly={mutationsLocked || busyStudentIds.has(Number(row.student_id))}
+              busy={busyStudentIds.has(Number(row.student_id))}
+              actions={buildClassroomActions(row)}
+            />
+          ))}
+        </div>
       ) : null}
 
       {!initialLoading && view === 'support' ? (
@@ -1279,86 +1220,68 @@ export default function StudentCheckoutPage() {
               </>
             ) : null}
           </div>
-          <div className={`grid gap-4 p-4 ${useListLayout ? 'xl:grid-cols-1' : 'xl:grid-cols-[1.2fr_1fr]'}`}>
+          <div className="grid gap-4 p-4 xl:grid-cols-1">
             <div className="space-y-3">
               {!filteredLogs.length ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-4 text-sm text-slate-500">
                   Nenhum log operacional encontrado com os filtros atuais.
                 </div>
               ) : null}
-              {groupLogsByDate(filteredLogs.slice(0, 20)).map(([dateLabel, items]) => (
+              {groupLogsByDate(filteredLogs.slice(0, visibleLogCount)).map(([dateLabel, items]) => (
                 <section key={dateLabel} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                  <div className="mb-2 flex items-center justify-between">
-                    <h4 className="text-sm font-semibold text-slate-900">{dateLabel}</h4>
+                  <button
+                    type="button"
+                    onClick={() => toggleDay(dateLabel)}
+                    className="mb-2 flex w-full items-center justify-between gap-2 text-left"
+                  >
+                    <h4 className="text-sm font-semibold text-slate-900">
+                      <span className="mr-1 text-slate-400">{collapsedDays.has(dateLabel) ? '▸' : '▾'}</span>{dateLabel}
+                    </h4>
                     <span className="text-xs text-slate-500">{items.length} registros</span>
-                  </div>
-                  <div className="space-y-2">
-                    {items.map((row) => (
-                      <button
-                        key={row.id}
-                        type="button"
-                        onClick={() => openStudentDetails(Number(row.student_id))}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm shadow-sm transition hover:border-slate-300 hover:shadow"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0 flex-1">
-                            <p className="break-words font-semibold text-slate-900">{row.student_name}</p>
-                            <p className="text-xs text-slate-500">{row.created_at ? new Date(row.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-'}</p>
+                  </button>
+                  {!collapsedDays.has(dateLabel) ? (
+                    <div className="space-y-2">
+                      {items.map((row) => (
+                        <button
+                          key={row.id}
+                          type="button"
+                          onClick={() => openStudentDetails(Number(row.student_id))}
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm shadow-sm transition hover:border-slate-300 hover:shadow"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <p className="break-words font-semibold text-slate-900">{row.student_name}</p>
+                              <p className="text-xs text-slate-500">{row.created_at ? new Date(row.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-'}</p>
+                            </div>
+                            <span className="max-w-[46%] rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
+                              {getCheckoutStatusLabel(row.previous_status)} → {getCheckoutStatusLabel(row.new_status)}
+                            </span>
                           </div>
-                          <span className="max-w-[46%] rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
-                            {getCheckoutStatusLabel(row.previous_status)} → {getCheckoutStatusLabel(row.new_status)}
-                          </span>
-                        </div>
-                        <p className="mt-2 break-words text-slate-700">{row.changed_by_name || '-'}{row.authorized_by_name ? ` • Autorizado por ${row.authorized_by_name}` : ''}</p>
-                        <p className="text-slate-600">{row.pickup_guardian_name || row.pickup_person_name || '-'}</p>
-                      </button>
-                    ))}
-                  </div>
+                          <p className="mt-2 break-words text-slate-700">{row.changed_by_name || '-'}{row.authorized_by_name ? ` • Autorizado por ${row.authorized_by_name}` : ''}</p>
+                          <p className="text-slate-600">{row.pickup_guardian_name || row.pickup_person_name || '-'}</p>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                 </section>
               ))}
+              {filteredLogs.length > visibleLogCount ? (
+                <button
+                  type="button"
+                  onClick={() => setVisibleLogCount((c) => c + 25)}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Carregar mais — mostrando {visibleLogCount} de {filteredLogs.length}
+                </button>
+              ) : filteredLogs.length ? (
+                <p className="text-center text-xs text-slate-400">Mostrando todos os {filteredLogs.length} registros</p>
+              ) : null}
             </div>
-            {!useListLayout ? (
-              <StudentProfilePanel
-                student={selectedStudent}
-                logs={selectedStudentLogs}
-                loading={studentLogsLoading}
-                error={studentLogsError}
-                period={studentLogPeriod}
-                setPeriod={setStudentLogPeriod}
-                from={studentLogFrom}
-                setFrom={setStudentLogFrom}
-                to={studentLogTo}
-                setTo={setStudentLogTo}
-                hasMore={studentLogsHasMore}
-                onLoadMore={() => void loadStudentLogs({ reset: false })}
-                onRequestHistory={() => void loadStudentLogs({ reset: true, force: true })}
-              />
-            ) : null}
           </div>
         </section>
       ) : null}
 
-      {view !== 'support' && !useListLayout ? (
-        <section className="mt-4">
-          <StudentProfilePanel
-            student={selectedStudent}
-            logs={selectedStudentLogs}
-            loading={studentLogsLoading}
-            error={studentLogsError}
-            period={studentLogPeriod}
-            setPeriod={setStudentLogPeriod}
-            from={studentLogFrom}
-            setFrom={setStudentLogFrom}
-            to={studentLogTo}
-            setTo={setStudentLogTo}
-            hasMore={studentLogsHasMore}
-            onLoadMore={() => void loadStudentLogs({ reset: false })}
-            onRequestHistory={() => void loadStudentLogs({ reset: true, force: true })}
-          />
-        </section>
-      ) : null}
-
-      {useListLayout && selectedStudent ? (
+      {selectedStudent ? (
         <StudentDetailsModal
           student={selectedStudent}
           mode={view}
@@ -1528,7 +1451,7 @@ function SummaryCard({ label, value, tone }) {
   )
 }
 
-function SummaryPill({ label, value, tone }) {
+function SummaryPill({ label, value, tone, active = false, onClick }) {
   const tones = {
     slate: 'bg-slate-100 text-slate-700',
     amber: 'bg-amber-100 text-amber-900',
@@ -1536,10 +1459,15 @@ function SummaryPill({ label, value, tone }) {
     emerald: 'bg-emerald-100 text-emerald-900',
   }
   return (
-    <div className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold ${tones[tone] || tones.slate}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold transition ${tones[tone] || tones.slate} ${active ? 'ring-2 ring-slate-500 ring-offset-1' : 'opacity-80 hover:opacity-100'}`}
+    >
       <span className="text-lg font-extrabold leading-none">{value}</span>
       <span className="uppercase tracking-wide">{label}</span>
-    </div>
+    </button>
   )
 }
 
@@ -1619,7 +1547,7 @@ function StudentProfilePanel({
         <>
           {student.status === 'needs_verification' ? (
             <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-900">
-              Pendência operacional: revisar saída ou autorização anterior.
+              Verificação pendente{student.verification_note ? `: ${student.verification_note}` : ' — revisar saída ou autorização anterior.'}
             </div>
           ) : null}
           {pickupDisplayName ? (
@@ -1906,179 +1834,6 @@ function StudentDetailsModal({
   )
 }
 
-const StudentCard = memo(function StudentCard({
-  row,
-  actions,
-  notesByStudent,
-  setNotesByStudent,
-  pickupGuardianByStudent,
-  setPickupGuardianByStudent,
-  manualPickupByStudent,
-  setManualPickupByStudent,
-  authorizedByByStudent,
-  setAuthorizedByByStudent,
-  onOpenProfile,
-  highlight = false,
-  compactReceptionFields = false,
-  readOnly = false,
-  busy = false,
-}) {
-  const visibleActions = actions.filter((action) => !action.hidden)
-  const pickupDisplayName = row.pickup_guardian_name || row.pickup_person_name || ''
-
-  return (
-    <article className={`rounded-3xl border bg-white p-4 shadow-sm transition-all duration-200 ${highlight ? 'border-amber-300 bg-amber-50/50 ring-2 ring-amber-200' : 'border-slate-200'}`}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-            <p className="break-words text-lg font-extrabold text-slate-900">{row.display_name || row.full_name}</p>
-          <p className="break-words text-sm text-slate-500">{row.class_name} • {row.campus}</p>
-          <p className="break-words text-sm text-slate-500">{row.family_name}</p>
-        </div>
-        <div className="flex flex-col items-end gap-2">
-          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getCheckoutStatusClass(row.status)}`}>
-            {getCheckoutStatusLabel(row.status)}
-          </span>
-          {row.status === 'needs_verification' ? (
-            <span className="rounded-full bg-rose-100 px-3 py-1 text-[11px] font-semibold text-rose-800">
-              Pendência operacional
-            </span>
-          ) : highlight ? (
-            <span className="rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800">
-              Novo na fila
-            </span>
-          ) : null}
-          {onOpenProfile ? (
-            <button
-              type="button"
-              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
-              onClick={onOpenProfile}
-            >
-              Ver perfil
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      {(row.activities ?? []).length ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {(row.activities ?? []).map((item) => (
-            <span key={item} className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">{item}</span>
-          ))}
-        </div>
-      ) : null}
-
-      <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-sm text-slate-700">
-        <p className="font-semibold text-slate-900">Pessoas autorizadas</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {row.authorized_guardians.length ? row.authorized_guardians.map((item) => (
-            <span key={item.id} className="max-w-full break-words rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-              {item.full_name}
-            </span>
-          )) : <span className="text-xs text-rose-700">Nenhuma pessoa autorizada cadastrada.</span>}
-        </div>
-      </div>
-
-      {pickupDisplayName ? (
-        <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Retirada em andamento por <strong>{pickupDisplayName}</strong>
-        </div>
-      ) : null}
-
-      {row.verification_note ? (
-        <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
-          Verificação pendente: {row.verification_note}
-        </div>
-      ) : null}
-
-      {!compactReceptionFields ? (
-        <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr_1fr]">
-          <div>
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Responsável identificado</label>
-            <select
-              disabled={readOnly || busy}
-              className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
-              value={pickupGuardianByStudent[row.student_id] || ''}
-              onChange={(event) => setPickupGuardianByStudent((current) => ({ ...current, [row.student_id]: event.target.value }))}
-            >
-              <option value="">Selecione responsável autorizado</option>
-              {row.authorized_guardians.map((item) => (
-                <option key={item.id} value={item.id}>{item.full_name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Ou informe outro nome</label>
-            <input
-              disabled={readOnly || busy}
-              className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
-              placeholder="Usar quando não estiver na lista"
-              value={manualPickupByStudent[row.student_id] || ''}
-              onChange={(event) => setManualPickupByStudent((current) => ({ ...current, [row.student_id]: event.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Autorizado por</label>
-            <input
-              disabled={readOnly || busy}
-              className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
-              placeholder="Operador / coordenação"
-              value={authorizedByByStudent[row.student_id] || ''}
-              onChange={(event) => setAuthorizedByByStudent((current) => ({ ...current, [row.student_id]: event.target.value }))}
-            />
-          </div>
-        </div>
-      ) : null}
-
-      <div className="mt-4">
-        <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Observação operacional</label>
-        <textarea
-          rows={2}
-          disabled={readOnly || busy}
-          className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
-          placeholder="Obrigatório quando houver verificação manual"
-          value={notesByStudent[row.student_id] || ''}
-          onChange={(event) => setNotesByStudent((current) => ({ ...current, [row.student_id]: event.target.value }))}
-        />
-      </div>
-
-      {visibleActions.length ? (
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {visibleActions.map((action) => (
-            <button
-              key={action.label}
-              type="button"
-              disabled={readOnly || busy}
-              className={`rounded-2xl px-4 py-4 text-sm font-extrabold ${readOnly || busy ? 'cursor-not-allowed bg-slate-100 text-slate-400' : buttonTone(action.tone)}`}
-              onClick={action.onClick}
-            >
-              {action.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      <dl className="mt-4 grid gap-2 rounded-2xl bg-slate-50 p-3 text-xs text-slate-600 md:grid-cols-2">
-        <div>
-          <dt className="font-semibold text-slate-900">Responsável chegou</dt>
-          <dd>{row.guardian_arrived_by_name ? `${row.guardian_arrived_by_name} • ${formatDate(row.guardian_arrived_at)}` : '-'}</dd>
-        </div>
-        <div>
-          <dt className="font-semibold text-slate-900">Pronto para retirada</dt>
-          <dd>{row.ready_for_pickup_by_name ? `${row.ready_for_pickup_by_name} • ${formatDate(row.ready_for_pickup_at)}` : '-'}</dd>
-        </div>
-        <div>
-          <dt className="font-semibold text-slate-900">Liberado da sala</dt>
-          <dd>{row.released_from_classroom_by_name ? `${row.released_from_classroom_by_name} • ${formatDate(row.released_from_classroom_at)}` : '-'}</dd>
-        </div>
-        <div>
-          <dt className="font-semibold text-slate-900">Saída final</dt>
-          <dd>{row.left_school_by_name ? `${row.left_school_by_name} • ${formatDate(row.left_school_at)}` : '-'}</dd>
-        </div>
-      </dl>
-    </article>
-  )
-}, areQueueRowPropsEqual)
-
 const CheckoutQueueRow = memo(function CheckoutQueueRow({
   row,
   mode,
@@ -2257,8 +2012,4 @@ function buttonTone(tone) {
 function confirmButtonTone(tone) {
   if (tone === 'emerald') return 'bg-emerald-700 hover:bg-emerald-800'
   return 'bg-slate-800 hover:bg-slate-900'
-}
-
-function formatDate(value) {
-  return value ? new Date(value).toLocaleString('pt-BR') : '-'
 }
