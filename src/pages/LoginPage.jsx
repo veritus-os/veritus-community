@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LayoutDashboard, LogIn, Search } from 'lucide-react'
 import { useRole } from '../core/auth/roleContext'
 import { useModule } from '../core/config/moduleContext'
+import altaVistaLogo from '../assets/alta-vista-logo.png'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -31,23 +31,24 @@ export default function LoginPage() {
     navigate('/checkout-demo', { replace: true })
   }
 
-  const isCheckout = mod.id === 'checkout'
-  const isSearch = mod.id === 'search'
-
   return (
-    <div className={`flex min-h-screen items-center justify-center px-4 py-8 ${isCheckout ? 'bg-gradient-to-br from-emerald-50 to-slate-100 dark:from-slate-900 dark:to-slate-800' : isSearch ? 'bg-gradient-to-br from-indigo-50 to-slate-100 dark:from-slate-900 dark:to-slate-800' : 'bg-gradient-to-br from-sky-50 to-slate-100 dark:from-slate-900 dark:to-slate-800'}`}>
+    <div className="flex min-h-screen items-center justify-center bg-[#F6F1E8] px-4 py-8">
       <div className="w-full max-w-md">
         <div className="mb-6 text-center">
-          <div className={`mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg ${isCheckout ? 'bg-emerald-700' : isSearch ? 'bg-indigo-700' : 'bg-sky-700'}`}>
-            {isSearch ? <Search className="h-7 w-7 text-white" /> : <LayoutDashboard className="h-7 w-7 text-white" />}
-          </div>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">Colégio Alta Vista</p>
-          <h1 className="mt-1 text-2xl font-extrabold text-slate-900 dark:text-slate-100">{mod.shortTitle}</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{mod.loginSubtitle}</p>
+          <img
+            src={altaVistaLogo}
+            alt="Colégio Alta Vista"
+            className="mx-auto mb-4 h-20 w-20 rounded-full shadow-sm"
+          />
+          <h1 className="text-2xl font-extrabold tracking-tight text-[#1B2430] sm:text-3xl">
+            Colégio Alta Vista
+          </h1>
+          <div className="mx-auto mt-2 h-0.5 w-10 rounded-full bg-[#E0A22E]" aria-hidden="true" />
+          <p className="mt-2 text-sm text-[#5A6675]">{mod.loginSubtitle}</p>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-6 shadow-sm">
-          <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
+        <div className="rounded-2xl border border-[#E7E0D3] bg-white p-6 shadow-sm">
+          <p className="mb-4 text-sm text-[#5A6675]">
             Use seu e-mail e senha para acessar.
           </p>
 
@@ -60,7 +61,7 @@ export default function LoginPage() {
             {error ? <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
 
             <button type="submit" disabled={loading}
-              className={`w-full rounded-xl px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition ${isCheckout ? 'bg-emerald-700 hover:bg-emerald-800' : isSearch ? 'bg-indigo-700 hover:bg-indigo-800' : 'bg-sky-700 hover:bg-sky-800'}`}>
+              className="w-full rounded-xl bg-[#204A98] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1A3E82] focus:outline-none focus:ring-2 focus:ring-[#204A98] focus:ring-offset-2 disabled:opacity-60">
               {loading ? 'Entrando...' : 'Entrar'}
             </button>
           </form>
@@ -68,21 +69,15 @@ export default function LoginPage() {
           {mod.showDemo && (
             <div className="mt-4 border-t border-slate-100 pt-4">
               <button type="button" onClick={handleDemo}
-                className="w-full rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-sm font-semibold text-sky-700 transition hover:bg-sky-100">
+                className="w-full rounded-xl border border-[#C7D0E4] bg-[#EEF2F9] px-3 py-2.5 text-sm font-semibold text-[#204A98] transition hover:bg-[#E3EAF6]">
                 Acessar demo de saída de alunos
               </button>
-              <p className="mt-2 text-center text-xs text-slate-400">
+              <p className="mt-2 text-center text-xs text-[#8A93A1]">
                 Acesso apenas ao módulo de saída de alunos.
               </p>
             </div>
           )}
         </div>
-
-        {mod.id === 'all' && (
-          <p className="mt-4 text-center text-[10px] text-slate-400">
-            Modo desenvolvimento — todos os módulos disponíveis
-          </p>
-        )}
       </div>
     </div>
   )
@@ -90,10 +85,10 @@ export default function LoginPage() {
 
 function Field({ label, type, value, onChange }) {
   return (
-    <label className="block text-sm text-slate-700 dark:text-slate-300">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</span>
+    <label className="block text-sm text-[#1B2430]">
+      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#5A6675]">{label}</span>
       <input type={type} value={value} onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-slate-100 px-3 py-2 text-sm transition focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400" />
+        className="w-full rounded-xl border border-[#D9D2C4] bg-white px-3 py-2 text-sm text-[#1B2430] transition focus:border-[#204A98] focus:outline-none focus:ring-1 focus:ring-[#204A98]" />
     </label>
   )
 }
