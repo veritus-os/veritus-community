@@ -29,6 +29,7 @@ import { EntityInfoProvider } from './components/EntityInfoDock'
 import AdminPage from './pages/AdminPage'
 import BugReporter from './components/BugReporter'
 import AppUpdateWatcher from './components/AppUpdateWatcher'
+import DocumentTitle from './components/DocumentTitle'
 import { FeatureFlagsProvider } from './core/config/featureFlagsContext'
 import StudentCheckoutPage from './pages/StudentCheckoutPage'
 import SearchPage from './pages/SearchPage'
@@ -68,6 +69,7 @@ function App() {
       <EntityInfoProvider>
         <BugReporter />
         <AppUpdateWatcher />
+        <DocumentTitle />
         <ErrorBoundary>
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
