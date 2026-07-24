@@ -1046,8 +1046,8 @@ export default function StudentCheckoutPage() {
         </div>
       ) : null}
 
-      <section className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+      <section className="mb-4 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm sm:px-4 sm:py-3">
+        <div className="flex items-center gap-2 overflow-x-auto text-sm sm:flex-wrap sm:gap-x-3 sm:gap-y-2">
           <SummaryPill label="Todos" value={rows.length} tone="slate" active={!statusFilter} onClick={() => setStatusFilter(null)} />
           <SummaryPill label="Na escola" value={summary.totalAtSchool} tone="slate" active={statusFilter === 'at_school'} onClick={() => setStatusFilter((f) => (f === 'at_school' ? null : 'at_school'))} />
           <SummaryPill label="Aguardando" value={summary.totalWaiting} tone="amber" active={statusFilter === 'waiting'} onClick={() => setStatusFilter((f) => (f === 'waiting' ? null : 'waiting'))} />
@@ -1059,13 +1059,12 @@ export default function StudentCheckoutPage() {
       <section className="relative z-20 mb-4 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur sm:sticky sm:top-[4.8rem]">
         <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(170px,0.8fr)_minmax(220px,1fr)]">
           <div className="relative col-span-2 lg:col-span-1">
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Busca rápida</label>
-            <Search className="pointer-events-none absolute left-3 top-[2.35rem] h-4 w-4 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               ref={searchInputRef}
               autoComplete="off"
               autoCapitalize="none"
-              className="w-full rounded-2xl border border-slate-200 px-4 py-4 pl-10 pr-12 text-base shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+              className="w-full rounded-2xl border border-slate-200 px-4 py-2.5 pl-10 pr-16 text-base shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100 sm:py-4"
               placeholder="Buscar aluno, responsável ou turma..."
               value={searchDraft}
               onChange={(event) => setSearchDraft(event.target.value)}
@@ -1080,7 +1079,7 @@ export default function StudentCheckoutPage() {
             {searchDraft ? (
               <button
                 type="button"
-                className="absolute right-2.5 top-9 rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700"
                 onClick={() => {
                   setSearchDraft('')
                   setQuery('')
@@ -1092,16 +1091,14 @@ export default function StudentCheckoutPage() {
             ) : null}
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Turno</label>
-            <select className="w-full rounded-2xl border border-slate-200 px-4 py-4 text-base shadow-sm" value={turno} onChange={(event) => setTurno(event.target.value)}>
+            <select className="w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-base shadow-sm sm:py-4" value={turno} onChange={(event) => setTurno(event.target.value)}>
               {turnoOptions.map((item) => (
                 <option key={item.value} value={item.value}>{item.label}</option>
               ))}
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Turma</label>
-            <select className="w-full rounded-2xl border border-slate-200 px-4 py-4 text-base shadow-sm" value={classFilter} onChange={(event) => setClassFilter(event.target.value)}>
+            <select className="w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-base shadow-sm sm:py-4" value={classFilter} onChange={(event) => setClassFilter(event.target.value)}>
               {classOptions.map((item) => (
                 <option key={item.value} value={item.value}>{item.label}</option>
               ))}
@@ -1493,9 +1490,9 @@ function SummaryPill({ label, value, tone, active = false, onClick }) {
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`inline-flex items-center gap-2 rounded-full px-3 py-2.5 text-sm font-semibold transition ${tones[tone] || tones.slate} ${active ? 'ring-2 ring-slate-500 ring-offset-1' : 'opacity-80 hover:opacity-100'}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition sm:gap-2 sm:py-2.5 sm:text-sm ${tones[tone] || tones.slate} ${active ? 'ring-2 ring-slate-500 ring-offset-1' : 'opacity-80 hover:opacity-100'}`}
     >
-      <span className="text-lg font-extrabold leading-none">{value}</span>
+      <span className="text-sm font-extrabold leading-none sm:text-lg">{value}</span>
       <span className="uppercase tracking-wide">{label}</span>
     </button>
   )
@@ -1534,7 +1531,6 @@ function StudentProfilePanel({
   const [logsOpen, setLogsOpen] = useState(false)
   const pickupDisplayName = student?.pickup_guardian_name || student?.pickup_person_name || ''
   const showPickupControls = showOperationalControls && (mode === 'reception' || mode === 'support')
-  const studentDisplayName = student?.display_name || student?.full_name || student?.student_name || 'Selecione um aluno'
   const selectedGuardianId = Number(pickupGuardianByStudent[student?.student_id] || 0)
   const requestHistory = useEffectEvent(() => onRequestHistory?.())
 
@@ -1548,31 +1544,7 @@ function StudentProfilePanel({
   }, [student?.student_id, from, logsOpen, period, requestHistory, to])
 
   return (
-    <aside className={`rounded-3xl border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Perfil operacional</p>
-          <h3 className="break-words text-lg font-extrabold text-slate-900">{studentDisplayName}</h3>
-          <p className="break-words text-sm text-slate-500">{student ? `${student.class_name} • ${student.campus}` : 'Abra um cartão para ver histórico e ações.'}</p>
-        </div>
-        <div className="flex items-start gap-2">
-          {student ? (
-            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getCheckoutStatusClass(student.status)}`}>
-              {getCheckoutStatusLabel(student.status)}
-            </span>
-          ) : null}
-          {onClose ? (
-            <button
-              type="button"
-              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
-              onClick={onClose}
-            >
-              Fechar
-            </button>
-          ) : null}
-        </div>
-      </div>
-
+    <div className={className}>
       {student ? (
         <>
           {student.status === 'needs_verification' ? (
@@ -1674,21 +1646,7 @@ function StudentProfilePanel({
             </div>
           ) : null}
 
-          {actions.length ? (
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              {actions.map((action) => (
-                <button
-                  key={action.label}
-                  type="button"
-                  disabled={readOnly || actionBusy || action.disabled}
-                  className={`rounded-2xl px-4 py-4 text-sm font-extrabold ${readOnly || action.disabled ? 'cursor-not-allowed bg-slate-100 text-slate-400' : buttonTone(action.tone)}`}
-                  onClick={action.onClick}
-                >
-                  {action.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
+          {/* Primary actions are pinned in the sheet footer (StudentDetailsModal). */}
 
           <div className="mt-4">
             <button
@@ -1779,7 +1737,7 @@ function StudentProfilePanel({
           ) : null}
         </>
       ) : null}
-    </aside>
+    </div>
   )
 }
 
@@ -1827,47 +1785,91 @@ function StudentDetailsModal({
 
   if (!student) return null
 
+  const displayName = student.display_name || student.full_name || student.student_name || 'Aluno'
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 px-0 sm:items-center sm:px-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 sm:items-center sm:p-4"
       onClick={() => onClose?.()}
       role="presentation"
     >
       <div
-        className="w-full max-h-[92vh] overflow-hidden bg-white shadow-2xl sm:my-4 sm:max-w-5xl sm:rounded-3xl"
+        className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[88vh] sm:max-w-5xl sm:rounded-3xl"
         onClick={(event) => event.stopPropagation()}
         role="presentation"
       >
-        <StudentProfilePanel
-          student={student}
-          logs={logs}
-          loading={loading}
-          error={error}
-          period={period}
-          setPeriod={setPeriod}
-          from={from}
-          setFrom={setFrom}
-          to={to}
-          setTo={setTo}
-          hasMore={hasMore}
-          onLoadMore={onLoadMore}
-          onClose={onClose}
-          actions={actions}
-          className="h-full max-h-[92vh] overflow-y-auto rounded-none border-0 shadow-none sm:rounded-3xl"
-          mode={mode}
-          showOperationalControls
-          readOnly={readOnly}
-          notesByStudent={notesByStudent}
-          setNotesByStudent={setNotesByStudent}
-          pickupGuardianByStudent={pickupGuardianByStudent}
-          setPickupGuardianByStudent={setPickupGuardianByStudent}
-          manualPickupByStudent={manualPickupByStudent}
-          setManualPickupByStudent={setManualPickupByStudent}
-          authorizedByByStudent={authorizedByByStudent}
-          setAuthorizedByByStudent={setAuthorizedByByStudent}
-          onRequestHistory={onRequestHistory}
-          actionBusy={actionBusy}
-        />
+        {/* grab handle (mobile bottom sheet) */}
+        <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-slate-300 sm:hidden" aria-hidden="true" />
+
+        {/* pinned header */}
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Perfil operacional</p>
+            <h3 className="truncate text-lg font-extrabold text-slate-900">{displayName}</h3>
+            <p className="truncate text-sm text-slate-500">{student.class_name} • {student.campus}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getCheckoutStatusClass(student.status)}`}>
+              {getCheckoutStatusLabel(student.status)}
+            </span>
+            <button
+              type="button"
+              onClick={() => onClose?.()}
+              aria-label="Fechar"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:bg-slate-50"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* scrollable body */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 sm:px-5">
+          <StudentProfilePanel
+            student={student}
+            logs={logs}
+            loading={loading}
+            error={error}
+            period={period}
+            setPeriod={setPeriod}
+            from={from}
+            setFrom={setFrom}
+            to={to}
+            setTo={setTo}
+            hasMore={hasMore}
+            onLoadMore={onLoadMore}
+            mode={mode}
+            showOperationalControls
+            readOnly={readOnly}
+            notesByStudent={notesByStudent}
+            setNotesByStudent={setNotesByStudent}
+            pickupGuardianByStudent={pickupGuardianByStudent}
+            setPickupGuardianByStudent={setPickupGuardianByStudent}
+            manualPickupByStudent={manualPickupByStudent}
+            setManualPickupByStudent={setManualPickupByStudent}
+            authorizedByByStudent={authorizedByByStudent}
+            setAuthorizedByByStudent={setAuthorizedByByStudent}
+            onRequestHistory={onRequestHistory}
+            actionBusy={actionBusy}
+          />
+        </div>
+
+        {/* pinned action bar — primary actions always on-screen */}
+        {actions.length ? (
+          <div className="flex shrink-0 flex-wrap gap-2 border-t border-slate-100 bg-white px-4 py-3 sm:px-5">
+            {actions.map((action) => (
+              <button
+                key={action.label}
+                type="button"
+                disabled={readOnly || actionBusy || action.disabled}
+                className={`flex min-h-[48px] grow basis-[calc(50%-0.25rem)] items-center justify-center rounded-2xl px-4 text-sm font-extrabold ${readOnly || action.disabled ? 'cursor-not-allowed bg-slate-100 text-slate-400' : buttonTone(action.tone)}`}
+                onClick={action.onClick}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   )
@@ -1908,53 +1910,62 @@ const CheckoutQueueRow = memo(function CheckoutQueueRow({
           onOpenProfile?.()
         }
       }}
-      className={`cursor-pointer rounded-2xl border bg-white p-2.5 shadow-sm transition-all duration-200 hover:border-slate-300 hover:shadow-md sm:p-3 ${highlight ? 'border-amber-300 bg-amber-50/50 ring-2 ring-amber-200' : 'border-slate-200'}`}
+      className={`cursor-pointer rounded-xl border bg-white p-2 shadow-sm transition-all duration-200 hover:border-slate-300 hover:shadow-md sm:rounded-2xl sm:p-3 ${highlight ? 'border-amber-300 bg-amber-50/50 ring-2 ring-amber-200' : 'border-slate-200'}`}
     >
-      <div className="flex items-start justify-between gap-3">
+      {/* Status badge row — desktop only; mobile uses the status dot next to the name. */}
+      <div className="mb-2.5 hidden items-start justify-between gap-3 sm:flex">
         <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${getCheckoutStatusClass(row.status)}`}>
           {getCheckoutStatusLabel(row.status)}
         </span>
         <div className="flex items-center gap-2">
           {row.status === 'needs_verification' ? (
-            <span className="rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-semibold text-rose-800">
-              Verificação
-            </span>
+            <span className="rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-semibold text-rose-800">Verificação</span>
           ) : highlight ? (
-            <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-800">
-              Novo
-            </span>
+            <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-800">Novo</span>
           ) : null}
         </div>
       </div>
 
-      <div className="mt-2.5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex items-center gap-2.5 sm:items-end sm:justify-between">
         <div className="min-w-0 flex-1">
-          <p className="break-words text-[15px] font-extrabold leading-tight text-slate-900 sm:text-[17px]">{studentDisplayName}</p>
-          <p className="break-words text-xs font-medium text-slate-500 sm:text-sm">{row.class_name}</p>
-          {row.authorized_guardians?.length ? (
-            <p className="mt-0.5 break-words text-xs text-slate-600 sm:text-sm">
-              <span className="text-slate-400">Autorizados:</span>{' '}
-              <span className="font-semibold text-slate-700">
-                {row.authorized_guardians.slice(0, 2).map((g) =>
-                  g.relationship_type_label ? `${g.full_name} (${g.relationship_type_label})` : g.full_name
-                ).join(', ')}
-                {row.authorized_guardians.length > 2 ? ` +${row.authorized_guardians.length - 2}` : ''}
-              </span>
-            </p>
-          ) : (
-            <p className="mt-0.5 text-xs font-semibold text-rose-600">⚠ Sem responsável autorizado cadastrado</p>
-          )}
-          {pickupDisplayName ? (
-            <p className="break-words text-xs text-slate-600 sm:text-sm">
-              Retirada: <span className="font-semibold text-slate-800">{pickupDisplayName}</span>
-            </p>
+          <div className="flex items-center gap-2">
+            <span className={`h-2.5 w-2.5 shrink-0 rounded-full sm:hidden ${statusDot(row.status)}`} aria-hidden="true" />
+            <p className="truncate text-[15px] font-extrabold leading-tight text-slate-900 sm:whitespace-normal sm:break-words sm:text-[17px]">{studentDisplayName}</p>
+          </div>
+          <p className="truncate text-xs font-medium text-slate-500 sm:whitespace-normal sm:break-words sm:text-sm">
+            {row.class_name}<span className="sm:hidden">{row.shift_name ? ` • ${row.shift_name}` : ''}</span>
+          </p>
+          {/* Authorized/pickup detail — desktop only (mobile shows it in the sheet). */}
+          <div className="hidden sm:block">
+            {row.authorized_guardians?.length ? (
+              <p className="mt-0.5 break-words text-sm text-slate-600">
+                <span className="text-slate-400">Autorizados:</span>{' '}
+                <span className="font-semibold text-slate-700">
+                  {row.authorized_guardians.slice(0, 2).map((g) =>
+                    g.relationship_type_label ? `${g.full_name} (${g.relationship_type_label})` : g.full_name
+                  ).join(', ')}
+                  {row.authorized_guardians.length > 2 ? ` +${row.authorized_guardians.length - 2}` : ''}
+                </span>
+              </p>
+            ) : (
+              <p className="mt-0.5 text-sm font-semibold text-rose-600">⚠ Sem responsável autorizado cadastrado</p>
+            )}
+            {pickupDisplayName ? (
+              <p className="break-words text-sm text-slate-600">
+                Retirada: <span className="font-semibold text-slate-800">{pickupDisplayName}</span>
+              </p>
+            ) : null}
+          </div>
+          {/* Safety flag on mobile — prominent red pill, never hidden by the density. */}
+          {!row.authorized_guardians?.length ? (
+            <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-rose-600 px-2 py-0.5 text-[11px] font-bold text-white sm:hidden">⚠ Sem responsável autorizado</span>
           ) : null}
         </div>
         {primaryAction ? (
           <button
             type="button"
-          disabled={readOnly || busy}
-            className={`w-full rounded-2xl px-4 py-3 text-sm font-extrabold sm:w-auto ${readOnly || busy ? 'cursor-not-allowed bg-slate-100 text-slate-400' : buttonTone(primaryAction.tone)}`}
+            disabled={readOnly || busy}
+            className={`flex min-h-[44px] shrink-0 items-center rounded-xl px-4 text-sm font-extrabold sm:rounded-2xl ${readOnly || busy ? 'cursor-not-allowed bg-slate-100 text-slate-400' : buttonTone(primaryAction.tone)}`}
             onClick={(event) => {
               event.stopPropagation()
               primaryAction.onClick()
@@ -1963,7 +1974,7 @@ const CheckoutQueueRow = memo(function CheckoutQueueRow({
             {primaryAction.label}
           </button>
         ) : (
-          <span className="text-xs font-semibold text-slate-400 sm:self-center">Toque para ver detalhes</span>
+          <span className="hidden text-xs font-semibold text-slate-400 sm:inline sm:self-center">Toque para ver detalhes</span>
         )}
       </div>
     </article>
@@ -2036,6 +2047,19 @@ function ConfirmationDialog({ open, title, children, confirmLabel, onCancel, onC
       </div>
     </div>
   )
+}
+
+function statusDot(status) {
+  switch (status) {
+    case 'needs_verification': return 'bg-rose-500'
+    case 'guardian_arrived':
+    case 'preparing_release':
+    case 'ready_for_pickup':
+    case 'released_from_classroom': return 'bg-amber-500'
+    case 'left_school': return 'bg-emerald-500'
+    case 'absent': return 'bg-slate-300'
+    default: return 'bg-slate-400'
+  }
 }
 
 function buttonTone(tone) {
