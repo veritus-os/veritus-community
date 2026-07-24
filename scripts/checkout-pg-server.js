@@ -339,6 +339,8 @@ async function handle(req, res) {
       return json(res, 403, { error: 'Seu perfil não pode executar essa ação.' })
     if (next === 'left_school' && !b.confirmed)
       return json(res, 400, { error: 'Confirmação obrigatória para saída final.' })
+    if (next === 'needs_verification' && !String(b.note || '').trim())
+      return json(res, 400, { error: 'Informe o motivo da retirada excepcional para marcar verificação.' })
 
     let guardian = null
     if (b.pickupGuardianId) {
