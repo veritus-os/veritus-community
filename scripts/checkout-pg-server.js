@@ -40,6 +40,26 @@ function loadJwtSecret() {
 }
 const JWT_SECRET = loadJwtSecret()
 
+// --- Login rate limit (per-IP, FAILED attempts only; in-memory, LAN single-server) ---
+// Counts only failed logins in a rolling 60s window and resets on success, so a
+// staffer fat-fingering during pickup rush isn't locked out, while brute-force
+// from one machine is throttled. In-memory is intentional (clears on restart).
+const LOGIN_MAX_FAILS = 10
+const LOGIN_WINDOW_MS = 60000
+const loginFails = new Map() // ip -> { count, resetAt }
+function loginRateOk(ip) {
+  const e = loginFails.get(ip)
+  if (!e) return true
+  if (Date.now() > e.resetAt) { loginFails.delete(ip); return true }
+  return e.count < LOGIN_MAX_FAILS
+}
+function loginFail(ip) {
+  const now = Date.now(); const e = loginFails.get(ip)
+  if (!e || now > e.resetAt) loginFails.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW_MS })
+  else e.count++
+}
+function loginReset(ip) { loginFails.delete(ip) }
+
 // --- Status rules (mirror checkoutMonitorService.js / JSON server) ---
 const RECEPTION_ROLES = ['super_admin', 'admin', 'secretaria', 'reception', 'support']
 const CLASSROOM_ROLES = ['super_admin', 'admin', 'secretaria', 'professor', 'infantil_coordination', 'fundamental_coordination', 'support']
@@ -190,13 +210,18 @@ async function handle(req, res) {
 
   // --- Auth (shared staff_users, checkout module required) ---
   if (method === 'POST' && path === '/api/auth/login') {
+    const ip = req.socket.remoteAddress || 'unknown'
+    if (!loginRateOk(ip)) return json(res, 429, { error: 'Muitas tentativas de login. Aguarde 1 minuto e tente novamente.' })
     const b = await readBody(req)
     const email = String(b.email || '').toLowerCase().trim()
     const { rows } = await pool.query(
       `SELECT id, full_name, email, password_hash, role, modules, active FROM public.staff_users WHERE lower(email) = $1`, [email])
     const u = rows[0]
-    if (!u || !u.active || !bcrypt.compareSync(String(b.password || ''), u.password_hash))
+    if (!u || !u.active || !bcrypt.compareSync(String(b.password || ''), u.password_hash)) {
+      loginFail(ip)
       return json(res, 401, { error: 'Credenciais inválidas.' })
+    }
+    loginReset(ip) // valid credentials — clear the counter (don't penalise a shared device)
     if (!(u.modules || []).includes('checkout'))
       return json(res, 403, { error: 'Usuário sem acesso ao módulo de saída.' })
     const session = { id: String(u.id), email: u.email, full_name: u.full_name, role: u.role, modules: u.modules || [] }
