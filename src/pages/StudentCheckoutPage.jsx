@@ -1047,7 +1047,7 @@ export default function StudentCheckoutPage() {
       ) : null}
 
       <section className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
           <SummaryPill label="Todos" value={rows.length} tone="slate" active={!statusFilter} onClick={() => setStatusFilter(null)} />
           <SummaryPill label="Na escola" value={summary.totalAtSchool} tone="slate" active={statusFilter === 'at_school'} onClick={() => setStatusFilter((f) => (f === 'at_school' ? null : 'at_school'))} />
           <SummaryPill label="Aguardando" value={summary.totalWaiting} tone="amber" active={statusFilter === 'waiting'} onClick={() => setStatusFilter((f) => (f === 'waiting' ? null : 'waiting'))} />
@@ -1056,9 +1056,9 @@ export default function StudentCheckoutPage() {
         </div>
       </section>
 
-      <section className="sticky top-[4.4rem] z-20 mb-4 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur sm:top-[4.8rem]">
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(170px,0.8fr)_minmax(220px,1fr)]">
-          <div className="relative">
+      <section className="relative z-20 mb-4 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur sm:sticky sm:top-[4.8rem]">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(170px,0.8fr)_minmax(220px,1fr)]">
+          <div className="relative col-span-2 lg:col-span-1">
             <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Busca rápida</label>
             <Search className="pointer-events-none absolute left-3 top-[2.35rem] h-4 w-4 text-slate-400" />
             <input
@@ -1080,7 +1080,7 @@ export default function StudentCheckoutPage() {
             {searchDraft ? (
               <button
                 type="button"
-                className="absolute right-3 top-10 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
+                className="absolute right-2.5 top-9 rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700"
                 onClick={() => {
                   setSearchDraft('')
                   setQuery('')
@@ -1120,7 +1120,7 @@ export default function StudentCheckoutPage() {
               <button
                 type="button"
                 disabled={!canReset || submitting}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold ${canReset && !submitting ? 'border border-slate-200 bg-white text-slate-700' : 'cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400'}`}
+                className={`rounded-full px-4 py-2.5 text-xs font-semibold ${canReset && !submitting ? 'border border-slate-200 bg-white text-slate-700' : 'cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400'}`}
                 onClick={() => setResetPending(true)}
               >
                 Resetar dia
@@ -1227,7 +1227,7 @@ export default function StudentCheckoutPage() {
               <button
                 key={item.key}
                 type="button"
-                className={`rounded-full px-3 py-2 text-xs font-semibold ${supportLogPeriod === item.key ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
+                className={`rounded-full px-3.5 py-2.5 text-xs font-semibold ${supportLogPeriod === item.key ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
                 onClick={() => setSupportLogPeriod(item.key)}
               >
                 {item.label}
@@ -1237,13 +1237,13 @@ export default function StudentCheckoutPage() {
               <>
                 <input
                   type="date"
-                  className="rounded-full border border-slate-200 px-3 py-2 text-xs"
+                  className="rounded-full border border-slate-200 px-3 py-2.5 text-xs"
                   value={supportLogFrom}
                   onChange={(event) => setSupportLogFrom(event.target.value)}
                 />
                 <input
                   type="date"
-                  className="rounded-full border border-slate-200 px-3 py-2 text-xs"
+                  className="rounded-full border border-slate-200 px-3 py-2.5 text-xs"
                   value={supportLogTo}
                   onChange={(event) => setSupportLogTo(event.target.value)}
                 />
@@ -1493,7 +1493,7 @@ function SummaryPill({ label, value, tone, active = false, onClick }) {
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold transition ${tones[tone] || tones.slate} ${active ? 'ring-2 ring-slate-500 ring-offset-1' : 'opacity-80 hover:opacity-100'}`}
+      className={`inline-flex items-center gap-2 rounded-full px-3 py-2.5 text-sm font-semibold transition ${tones[tone] || tones.slate} ${active ? 'ring-2 ring-slate-500 ring-offset-1' : 'opacity-80 hover:opacity-100'}`}
     >
       <span className="text-lg font-extrabold leading-none">{value}</span>
       <span className="uppercase tracking-wide">{label}</span>
