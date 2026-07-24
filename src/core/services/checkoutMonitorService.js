@@ -20,6 +20,7 @@ function logQuery(name, rowCount, trigger = 'auto') {
 const RECEPTION_ROLES = ['super_admin', 'admin', 'secretaria', 'reception', 'support']
 const CLASSROOM_ROLES = ['super_admin', 'admin', 'secretaria', 'professor', 'infantil_coordination', 'fundamental_coordination', 'support']
 const RESET_ROLES = ['super_admin', 'admin', 'secretaria']
+const RESET_DAY_ROLES = ['super_admin', 'admin', 'support'] // reset-day = support/admin only (mirrors server)
 const ALL_ROLES = [...new Set([...RECEPTION_ROLES, ...CLASSROOM_ROLES])]
 // Reverter (→ at_school): qualquer operador do fluxo. Coordenação segue limitada
 // à própria sede pelo escopo por segment (403) no servidor.
@@ -609,7 +610,7 @@ export class CheckoutMonitorService {
     if (!this.hasSupabaseConfig && !this.allowLocalFallback && !this.useLocalApi) {
       throw new Error('O monitor de saída do piloto exige Supabase configurado.')
     }
-    if (!RESET_ROLES.includes(actorRole)) {
+    if (!RESET_DAY_ROLES.includes(actorRole)) {
       throw new Error('Seu perfil não pode resetar o monitor diário de saída.')
     }
 
