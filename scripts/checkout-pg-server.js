@@ -250,13 +250,24 @@ async function handle(req, res) {
   }
 
   if (method === 'GET' && path === '/api/checkout/logs') {
+    // Date range: default to today (preserves prior behaviour when no range is sent).
+    const today = await spDate()
+    const from = (url.searchParams.get('from') || today).slice(0, 10)
+    const to = (url.searchParams.get('to') || today).slice(0, 10)
     const campus = url.searchParams.get('campus') || 'todos'
     const limit = Math.min(Number(url.searchParams.get('limit')) || 200, 1000)
-    const params = [limit]
-    let where = `WHERE checkout_date = (now() AT TIME ZONE 'America/Sao_Paulo')::date`
-    if (campus && campus !== 'todos') { params.push(campus); where += ` AND campus_name = $${params.length}` }
+    const seg = COORD_SEGMENT[user.role] || null // coordination sees only its own sede — mirrors the board
+    const params = [from, to]
+    let joinSql = ''
+    let where = `WHERE l.checkout_date BETWEEN $1::date AND $2::date`
+    if (seg) {
+      joinSql = ` LEFT JOIN public.students s ON s.id = l.student_id`
+      params.push(seg); where += ` AND (s.segment = $${params.length} OR s.segment IS NULL)`
+    }
+    if (campus && campus !== 'todos') { params.push(campus); where += ` AND l.campus_name = $${params.length}` }
+    params.push(limit)
     const { rows } = await pool.query(
-      `SELECT * FROM checkout.checkout_logs ${where} ORDER BY created_at DESC LIMIT $1`, params)
+      `SELECT l.* FROM checkout.checkout_logs l${joinSql} ${where} ORDER BY l.created_at DESC LIMIT $${params.length}`, params)
     return json(res, 200, { rows, version: await getVersion() })
   }
 

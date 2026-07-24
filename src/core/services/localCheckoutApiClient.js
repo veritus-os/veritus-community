@@ -88,9 +88,11 @@ export async function localTransitionStatus(params) {
 }
 
 // Logs
-export async function localListLogs(campus = 'todos', limit = 200) {
+export async function localListLogs({ campus = 'todos', from = '', to = '', limit = 200 } = {}) {
   const params = new URLSearchParams()
   if (campus) params.set('campus', campus)
+  if (from) params.set('from', from)
+  if (to) params.set('to', to)
   if (limit) params.set('limit', String(limit))
   const data = await request('GET', `/api/checkout/logs?${params}`)
   return data.rows

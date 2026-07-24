@@ -458,9 +458,10 @@ export class CheckoutMonitorService {
 
   async listAuditLogs(filters = {}) {
     assertCampus(filters.campus)
+    const range = resolveLogRange(filters.period || 'today', filters.from, filters.to)
     let rows
     if (this.useLocalApi) {
-      rows = await localApi.localListLogs(filters.campus)
+      rows = await localApi.localListLogs({ campus: filters.campus, from: range.from, to: range.to, limit: filters.limit || 1000 })
     } else if (this.hasSupabaseConfig) {
       rows = await this.#listLogsFromSupabase()
     } else if (this.allowLocalFallback) {

@@ -356,7 +356,7 @@ export default function StudentCheckoutPage() {
       setError('')
       const promises = [checkoutMonitorService.listBoard({ includeAbsent: true })]
       if (shouldLoadLogs) {
-        promises.push(checkoutMonitorService.listAuditLogs({}))
+        promises.push(checkoutMonitorService.listAuditLogs({ period: supportLogPeriod, from: supportLogFrom, to: supportLogTo }))
       }
       const [boardResult, auditResult] = await Promise.allSettled(promises)
       if (boardResult.status !== 'fulfilled') {
@@ -663,6 +663,15 @@ export default function StudentCheckoutPage() {
     setVisibleLogCount(25)
     setCollapsedDays(new Set())
   }, [supportLogPeriod, supportLogFrom, supportLogTo, campus, query])
+
+  // Recarrega os logs do servidor quando o período muda (o servidor agora é escopado por intervalo).
+  const logsPeriodDidMountRef = useRef(false)
+  useEffect(() => {
+    if (!logsPeriodDidMountRef.current) { logsPeriodDidMountRef.current = true; return }
+    if (view !== 'support') return
+    if (supportLogPeriod === 'custom' && (!supportLogFrom || !supportLogTo)) return
+    void loadData({ force: true })
+  }, [supportLogPeriod, supportLogFrom, supportLogTo])
 
   function toggleDay(label) {
     setCollapsedDays((prev) => {
