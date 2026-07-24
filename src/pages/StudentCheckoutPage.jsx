@@ -18,6 +18,7 @@ const VIEW_OPTIONS = [
 
 const DEVICE_STORAGE_KEY = 'veritus_checkout_device_label'
 const RESET_ROLES = ['super_admin', 'admin', 'secretaria']
+const RESET_DAY_ROLES = ['super_admin', 'admin', 'support'] // reset-day restricted to support/admin
 const RECEPTION_ROLES = ['super_admin', 'admin', 'secretaria', 'reception', 'support']
 const CLASSROOM_ROLES = ['super_admin', 'admin', 'secretaria', 'professor', 'infantil_coordination', 'fundamental_coordination', 'support']
 // Reverter (→ em aula): qualquer operador do fluxo; coordenação segue limitada à
@@ -308,7 +309,8 @@ export default function StudentCheckoutPage() {
   const lowEgressEnabled = checkoutMonitorService.isLowEgress()
   const localApiMode = checkoutMonitorService.isLocalApiMode()
   const mutationsLocked = !actorId || (!realtimeEnabled && !localFallbackEnabled && !lowEgressEnabled)
-  const canReset = !mutationsLocked && RESET_ROLES.includes(role)
+  const canResetRole = RESET_DAY_ROLES.includes(role)
+  const canReset = !mutationsLocked && canResetRole
 
   useEffect(() => {
     // Device label is retained only for audit/log traceability; keep a safe default even when hidden from the main UI.
@@ -1097,14 +1099,16 @@ export default function StudentCheckoutPage() {
               <RefreshCw className="h-3.5 w-3.5" />
               Atualizar
             </button>
-            <button
-              type="button"
-              disabled={!canReset || submitting}
-              className={`rounded-full px-3 py-1.5 text-xs font-semibold ${canReset && !submitting ? 'border border-slate-200 bg-white text-slate-700' : 'cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400'}`}
-              onClick={() => setResetPending(true)}
-            >
-              Resetar dia
-            </button>
+            {canResetRole ? (
+              <button
+                type="button"
+                disabled={!canReset || submitting}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold ${canReset && !submitting ? 'border border-slate-200 bg-white text-slate-700' : 'cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400'}`}
+                onClick={() => setResetPending(true)}
+              >
+                Resetar dia
+              </button>
+            ) : null}
           </div>
           {lockedCampus && (
             <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">

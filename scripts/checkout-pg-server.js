@@ -44,6 +44,10 @@ const JWT_SECRET = loadJwtSecret()
 const RECEPTION_ROLES = ['super_admin', 'admin', 'secretaria', 'reception', 'support']
 const CLASSROOM_ROLES = ['super_admin', 'admin', 'secretaria', 'professor', 'infantil_coordination', 'fundamental_coordination', 'support']
 const RESET_ROLES = ['super_admin', 'admin', 'secretaria']
+// Reset-day wipes the whole board's in-progress daily state — a recovery action,
+// not a daily operation. Restricted to support + admin (NOT secretaria). Kept
+// separate from RESET_ROLES, which still governs the (different) "absent" transition.
+const RESET_DAY_ROLES = ['super_admin', 'admin', 'support']
 const ALL_ROLES = [...new Set([...RECEPTION_ROLES, ...CLASSROOM_ROLES])]
 // Reverter (→ at_school): qualquer operador do fluxo. Coordenação segue limitada
 // à própria sede pelo escopo por segment (403) na transição.
@@ -390,7 +394,7 @@ async function handle(req, res) {
   }
 
   if (method === 'POST' && path === '/api/checkout/reset-day') {
-    if (!RESET_ROLES.includes(user.role)) return json(res, 403, { error: 'Seu perfil não pode resetar o monitor.' })
+    if (!RESET_DAY_ROLES.includes(user.role)) return json(res, 403, { error: 'Seu perfil não pode resetar o monitor.' })
     const b = await readBody(req)
     const campus = b.campus || 'todos'
     const today = await spDate()
