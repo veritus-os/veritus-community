@@ -1559,8 +1559,17 @@ function StudentProfilePanel({
       {student ? (
         <>
           {student.status === 'needs_verification' ? (
-            <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-900">
-              Verificação pendente{student.verification_note ? `: ${student.verification_note}` : ' — revisar saída ou autorização anterior.'}
+            <div className="mt-3 rounded-2xl border-2 border-rose-300 bg-rose-50 px-4 py-3">
+              <p className="text-sm font-extrabold uppercase tracking-wide text-rose-800">⚠ Retirada excepcional — verificar antes de liberar</p>
+              <p className="mt-1.5 text-sm font-semibold text-rose-900">
+                Motivo: {student.verification_note ? student.verification_note : '— não informado (revise antes de liberar)'}
+              </p>
+              {student.pickup_person_name || student.pickup_guardian_name ? (
+                <p className="mt-1 text-sm text-rose-900">Retirada por: <strong>{student.pickup_person_name || student.pickup_guardian_name}</strong></p>
+              ) : null}
+              {student.guardian_arrived_by_name ? (
+                <p className="mt-0.5 text-xs text-rose-700">Registrado por {student.guardian_arrived_by_name}</p>
+              ) : null}
             </div>
           ) : null}
           {pickupDisplayName ? (

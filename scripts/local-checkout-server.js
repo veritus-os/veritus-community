@@ -305,6 +305,9 @@ async function handleRequest(req, res) {
     if (nextStatus === 'left_school' && !confirmed) {
       return json(res, 400, { error: 'Confirmação obrigatória para saída final.' })
     }
+    if (nextStatus === 'needs_verification' && !String(note || '').trim()) {
+      return json(res, 400, { error: 'Informe o motivo da retirada excepcional para marcar verificação.' })
+    }
 
     // Find guardian
     const allGuardians = (db.guardians || []).filter((g) => g.student_id === studentIdNum)
