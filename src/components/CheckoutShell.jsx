@@ -1,7 +1,7 @@
-import { LogOut, LayoutDashboard, LayoutGrid } from 'lucide-react'
-import { useFeatureFlags } from '../core/config/featureFlagsContext'
+import { LogOut, LayoutGrid } from 'lucide-react'
 import { ROLE_LABELS, getAvailableModules } from '../core/auth/permissions'
 import { useRole } from '../core/auth/roleContext'
+import altaVistaLogo from '../assets/alta-vista-logo.png'
 
 const STATUS_TONE_CLASS = {
   slate: 'border-slate-200 bg-slate-100 text-slate-700',
@@ -12,7 +12,6 @@ const STATUS_TONE_CLASS = {
 
 export default function CheckoutShell({ title, statusLabel = '', statusTone = 'slate', children }) {
   const { role, user, modules, isDemoMode, signOut } = useRole()
-  const { schoolName } = useFeatureFlags()
   const showHubLink = !isDemoMode && getAvailableModules(modules, role).length > 1
 
   return (
@@ -20,11 +19,11 @@ export default function CheckoutShell({ title, statusLabel = '', statusTone = 's
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex w-full max-w-[1180px] items-center justify-between gap-3 px-4 py-2.5 sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
-            <a href="/checkout" title="Voltar para início" className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-700 text-white shadow-sm cursor-pointer hover:bg-sky-800 transition">
-              <LayoutDashboard className="h-4 w-4" />
+            <a href="/checkout" title="Voltar para início" className="flex shrink-0 items-center cursor-pointer">
+              <img src={altaVistaLogo} alt="Colégio Alta Vista" className="h-9 w-9 rounded-full" />
             </a>
             <div className="min-w-0">
-              <a href="/checkout" title="Voltar para início" className="text-[10px] font-semibold uppercase tracking-[0.22em] text-sky-700 hover:text-sky-900 transition cursor-pointer">{schoolName}</a>
+              <a href="/checkout" title="Voltar para início" className="text-[10px] font-semibold uppercase tracking-[0.22em] text-sky-700 hover:text-sky-900 transition cursor-pointer">Alta Vista</a>
               <div className="mt-0.5 flex flex-wrap items-center gap-2">
                 <h1 className="text-sm font-extrabold text-slate-900 sm:text-[15px]">{title}</h1>
                 {statusLabel ? (
