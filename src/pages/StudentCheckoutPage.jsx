@@ -267,6 +267,8 @@ export default function StudentCheckoutPage() {
   const [visibleLogCount, setVisibleLogCount] = useState(25)
   const [collapsedDays, setCollapsedDays] = useState(() => new Set())
   const [resetPending, setResetPending] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [justRefreshed, setJustRefreshed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
@@ -575,6 +577,19 @@ export default function StudentCheckoutPage() {
       return
     }
     openStudentDetails(row.student_id)
+  }
+
+  async function handleManualRefresh() {
+    if (refreshing) return
+    setRefreshing(true)
+    setJustRefreshed(false)
+    try {
+      await loadData({ force: true })
+    } finally {
+      setRefreshing(false)
+      setJustRefreshed(true)
+      window.setTimeout(() => setJustRefreshed(false), 1800)
+    }
   }
 
   const filteredRows = useMemo(() => {
@@ -1095,9 +1110,11 @@ export default function StudentCheckoutPage() {
         </div>
         <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
           <div className="flex items-center gap-2">
-            <button type="button" className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50" onClick={() => void loadData({ force: true })}>
-              <RefreshCw className="h-3.5 w-3.5" />
-              Atualizar
+            <button type="button" disabled={refreshing}
+              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => void handleManualRefresh()}>
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+              {refreshing ? 'Atualizando…' : justRefreshed ? 'Atualizado ✓' : 'Atualizar'}
             </button>
             {canResetRole ? (
               <button
