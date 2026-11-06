@@ -3,7 +3,7 @@ import { ROLE_LABELS, getAvailableModules } from '../core/auth/permissions'
 import { useRole } from '../core/auth/roleContext'
 import altaVistaLogo from '../assets/alta-vista-logo.png'
 
-const METRICS_ROLES = ['super_admin', 'admin', 'secretaria', 'support', 'infantil_coordination', 'fundamental_coordination']
+const METRICS_ROLES = ['super_admin', 'admin', 'secretaria', 'support', 'reception']
 
 const STATUS_TONE_CLASS = {
   slate: 'border-slate-200 bg-slate-100 text-slate-700',

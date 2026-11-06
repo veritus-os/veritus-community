@@ -1,5 +1,5 @@
 import { memo, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
-import { RefreshCw, Search } from 'lucide-react'
+import { ChevronDown, RefreshCw, Search } from 'lucide-react'
 import CheckoutShell from '../components/CheckoutShell'
 import { ErrorBox, LoadingRow } from '../components/UiState'
 import { useRole } from '../core/auth/roleContext'
@@ -1093,19 +1093,25 @@ export default function StudentCheckoutPage() {
           </div>
           <div>
             <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Turno</label>
-            <select className="w-full rounded-2xl border border-slate-200 px-4 py-4 text-base shadow-sm" value={turno} onChange={(event) => setTurno(event.target.value)}>
-              {turnoOptions.map((item) => (
-                <option key={item.value} value={item.value}>{item.label}</option>
-              ))}
-            </select>
+            <div className="relative">
+              <select className="w-full appearance-none rounded-2xl border border-slate-200 bg-white py-4 pl-4 pr-11 text-base shadow-sm" value={turno} onChange={(event) => setTurno(event.target.value)}>
+                {turnoOptions.map((item) => (
+                  <option key={item.value} value={item.value}>{item.label}</option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            </div>
           </div>
           <div>
             <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Turma</label>
-            <select className="w-full rounded-2xl border border-slate-200 px-4 py-4 text-base shadow-sm" value={classFilter} onChange={(event) => setClassFilter(event.target.value)}>
-              {classOptions.map((item) => (
-                <option key={item.value} value={item.value}>{item.label}</option>
-              ))}
-            </select>
+            <div className="relative">
+              <select className="w-full appearance-none rounded-2xl border border-slate-200 bg-white py-4 pl-4 pr-11 text-base shadow-sm" value={classFilter} onChange={(event) => setClassFilter(event.target.value)}>
+                {classOptions.map((item) => (
+                  <option key={item.value} value={item.value}>{item.label}</option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            </div>
           </div>
         </div>
         <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
