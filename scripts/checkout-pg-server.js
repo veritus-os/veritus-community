@@ -300,6 +300,88 @@ async function handle(req, res) {
     return json(res, 200, { rows, version: await getVersion() })
   }
 
+  if (method === 'GET' && path === '/api/checkout/metrics') {
+    // Métricas de saída para a gestão: contagens, tempos e picos, agregados no
+    // banco. Mesma janela e mesmo escopo por sede do endpoint de logs.
+    const today = await spDate()
+    const from = (url.searchParams.get('from') || today).slice(0, 10)
+    const to = (url.searchParams.get('to') || today).slice(0, 10)
+    const campus = url.searchParams.get('campus') || 'todos'
+    const seg = COORD_SEGMENT[user.role] || null
+    const params = [from, to]
+    // A sede vem do cadastro do aluno (segment); o campus_name do log pode ser
+    // 'todos' quando o operador estava sem filtro.
+    const campusExpr = `COALESCE(NULLIF(l.campus_name, 'todos'), CASE s.segment WHEN 'infantil' THEN 'Sede Infantil' WHEN 'fundamental' THEN 'Sede Fundamental' END)`
+    let where = `l.checkout_date BETWEEN $1::date AND $2::date`
+    if (seg) { params.push(seg); where += ` AND (s.segment = $${params.length} OR s.segment IS NULL)` }
+    if (campus && campus !== 'todos') { params.push(campus); where += ` AND ${campusExpr} = $${params.length}` }
+    // Uma linha por aluno/dia: primeira chamada, liberação da sala e saída.
+    const base = `
+      WITH ev AS (
+        SELECT l.student_id, l.checkout_date, ${campusExpr} AS campus_name, l.class_name, l.new_status, l.created_at,
+               l.pickup_guardian_name, l.pickup_person_name, s.shift
+        FROM checkout.checkout_logs l
+        LEFT JOIN public.students s ON s.id = l.student_id
+        WHERE ${where}
+      ),
+      per AS (
+        SELECT student_id, checkout_date,
+               max(campus_name) AS campus_name, max(class_name) AS class_name, max(shift) AS shift,
+               min(created_at) FILTER (WHERE new_status = 'guardian_arrived') AS called_at,
+               min(created_at) FILTER (WHERE new_status = 'released_from_classroom') AS released_at,
+               max(created_at) FILTER (WHERE new_status = 'left_school') AS left_at,
+               bool_or(new_status = 'needs_verification') AS had_exception,
+               max(pickup_guardian_name) AS guardian_name, max(pickup_person_name) AS person_name
+        FROM ev GROUP BY student_id, checkout_date
+      )`
+    const [totals, byDay, byCampus, byClass, byQuarter, slowest] = await Promise.all([
+      pool.query(`${base}
+        SELECT count(*) FILTER (WHERE called_at IS NOT NULL)::int AS calls,
+               count(*) FILTER (WHERE left_at IS NOT NULL)::int AS exits,
+               count(*) FILTER (WHERE had_exception)::int AS exceptions,
+               count(*) FILTER (WHERE person_name IS NOT NULL AND person_name <> '')::int AS by_other_person,
+               round(avg(EXTRACT(EPOCH FROM (released_at - called_at)) / 60) FILTER (WHERE called_at IS NOT NULL AND released_at IS NOT NULL)::numeric, 1) AS avg_call_to_release_min,
+               round(avg(EXTRACT(EPOCH FROM (left_at - called_at)) / 60) FILTER (WHERE called_at IS NOT NULL AND left_at IS NOT NULL)::numeric, 1) AS avg_call_to_exit_min,
+               round((percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (left_at - called_at)) / 60) FILTER (WHERE called_at IS NOT NULL AND left_at IS NOT NULL))::numeric, 1) AS median_call_to_exit_min,
+               count(*) FILTER (WHERE left_at IS NOT NULL AND EXTRACT(EPOCH FROM (left_at - called_at)) / 60 > 10)::int AS over_10_min
+        FROM per`, params),
+      pool.query(`${base}
+        SELECT checkout_date::text AS day,
+               count(*) FILTER (WHERE called_at IS NOT NULL)::int AS calls,
+               count(*) FILTER (WHERE left_at IS NOT NULL)::int AS exits,
+               round(avg(EXTRACT(EPOCH FROM (left_at - called_at)) / 60) FILTER (WHERE called_at IS NOT NULL AND left_at IS NOT NULL)::numeric, 1) AS avg_min
+        FROM per GROUP BY checkout_date ORDER BY checkout_date`, params),
+      pool.query(`${base}
+        SELECT COALESCE(campus_name, 'Sem sede') AS campus,
+               count(*) FILTER (WHERE left_at IS NOT NULL)::int AS exits,
+               round(avg(EXTRACT(EPOCH FROM (left_at - called_at)) / 60) FILTER (WHERE called_at IS NOT NULL AND left_at IS NOT NULL)::numeric, 1) AS avg_min
+        FROM per GROUP BY 1 ORDER BY 1`, params),
+      pool.query(`${base}
+        SELECT COALESCE(class_name, 'Sem turma') AS class_name, max(campus_name) AS campus,
+               count(*) FILTER (WHERE left_at IS NOT NULL)::int AS exits,
+               round(avg(EXTRACT(EPOCH FROM (released_at - called_at)) / 60) FILTER (WHERE called_at IS NOT NULL AND released_at IS NOT NULL)::numeric, 1) AS avg_release_min,
+               round(avg(EXTRACT(EPOCH FROM (left_at - called_at)) / 60) FILTER (WHERE called_at IS NOT NULL AND left_at IS NOT NULL)::numeric, 1) AS avg_min
+        FROM per GROUP BY 1 ORDER BY exits DESC, 1 LIMIT 40`, params),
+      pool.query(`${base}
+        SELECT to_char(date_trunc('hour', left_at AT TIME ZONE 'America/Sao_Paulo') + (floor(EXTRACT(MINUTE FROM left_at AT TIME ZONE 'America/Sao_Paulo') / 15) * 15) * interval '1 minute', 'HH24:MI') AS slot,
+               count(*)::int AS exits
+        FROM per WHERE left_at IS NOT NULL GROUP BY 1 ORDER BY 1`, params),
+      pool.query(`${base}
+        SELECT student_id, checkout_date::text AS day, class_name, campus_name AS campus,
+               round(EXTRACT(EPOCH FROM (left_at - called_at)) / 60::numeric, 1) AS minutes
+        FROM per WHERE called_at IS NOT NULL AND left_at IS NOT NULL ORDER BY minutes DESC LIMIT 10`, params),
+    ])
+    return json(res, 200, {
+      range: { from, to, campus },
+      totals: totals.rows[0],
+      byDay: byDay.rows,
+      byCampus: byCampus.rows,
+      byClass: byClass.rows,
+      byQuarterHour: byQuarter.rows,
+      slowest: slowest.rows,
+    })
+  }
+
   if (method === 'GET' && path === '/api/checkout/student-logs') {
     const sid = Number(url.searchParams.get('studentId'))
     const limit = Math.min(Number(url.searchParams.get('limit')) || 50, 500)

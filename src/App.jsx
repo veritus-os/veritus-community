@@ -32,6 +32,8 @@ import AppUpdateWatcher from './components/AppUpdateWatcher'
 import DocumentTitle from './components/DocumentTitle'
 import { FeatureFlagsProvider } from './core/config/featureFlagsContext'
 import StudentCheckoutPage from './pages/StudentCheckoutPage'
+import CheckoutPanelPage from './pages/CheckoutPanelPage'
+import CheckoutMetricsPage from './pages/CheckoutMetricsPage'
 import SearchPage from './pages/SearchPage'
 import HubPage from './pages/HubPage'
 import NoAccessPage from './pages/NoAccessPage'
@@ -269,6 +271,25 @@ function App() {
               allowedRoles={['super_admin', 'admin', 'secretaria', 'professor', 'reception', 'infantil_coordination', 'fundamental_coordination', 'support']}
             >
               <StudentCheckoutPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/checkout/painel"
+          element={
+            <ProtectedRoute
+              requireModule="checkout"
+              allowedRoles={['super_admin', 'admin', 'secretaria', 'professor', 'reception', 'infantil_coordination', 'fundamental_coordination', 'support']}
+            >
+              <CheckoutPanelPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/checkout/metricas"
+          element={
+            <ProtectedRoute requireModule="checkout" allowedRoles={['super_admin', 'admin', 'secretaria', 'support', 'infantil_coordination', 'fundamental_coordination']}>
+              <CheckoutMetricsPage />
             </ProtectedRoute>
           }
         />

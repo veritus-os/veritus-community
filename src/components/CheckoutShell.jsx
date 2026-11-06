@@ -1,7 +1,9 @@
-import { LogOut, LayoutGrid } from 'lucide-react'
+import { LogOut, LayoutGrid, Tv, BarChart3 } from 'lucide-react'
 import { ROLE_LABELS, getAvailableModules } from '../core/auth/permissions'
 import { useRole } from '../core/auth/roleContext'
 import altaVistaLogo from '../assets/alta-vista-logo.png'
+
+const METRICS_ROLES = ['super_admin', 'admin', 'secretaria', 'support', 'infantil_coordination', 'fundamental_coordination']
 
 const STATUS_TONE_CLASS = {
   slate: 'border-slate-200 bg-slate-100 text-slate-700',
@@ -13,6 +15,7 @@ const STATUS_TONE_CLASS = {
 export default function CheckoutShell({ title, statusLabel = '', statusTone = 'slate', children }) {
   const { role, user, modules, isDemoMode, signOut } = useRole()
   const showHubLink = !isDemoMode && getAvailableModules(modules, role).length > 1
+  const showMetrics = !isDemoMode && METRICS_ROLES.includes(role)
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-slate-50 text-slate-800">
@@ -47,6 +50,26 @@ export default function CheckoutShell({ title, statusLabel = '', statusTone = 's
                 {ROLE_LABELS[role] || 'Perfil'}{user?.email ? ` • ${user.email}` : ''}
               </p>
             </div>
+            {showMetrics ? (
+              <a
+                href="/checkout/metricas"
+                title="Métricas da saída"
+                className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              >
+                <BarChart3 className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Métricas</span>
+              </a>
+            ) : null}
+            <a
+              href="/checkout/painel"
+              target="_blank"
+              rel="noopener"
+              title="Abrir o painel de chamadas (TV)"
+              className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              <Tv className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Painel TV</span>
+            </a>
             {showHubLink ? (
               <a
                 href="/hub"
