@@ -10,6 +10,7 @@ import {
 import * as api from '../core/services/veritusApiClient'
 import { getTheme, toggleTheme } from '../core/config/theme'
 import { getAvailableModules } from '../core/auth/permissions'
+import { useRole } from '../core/auth/roleContext'
 
 // ============================================================
 // Constants
@@ -53,6 +54,9 @@ export default function SearchPage() {
   const inputRef = useRef(null)
 
   const user = api.getCurrentUser()
+  // Módulos e papel vêm da sessão unificada; o usuário do Search não carrega `modules`.
+  const { modules: sessionModules, role: sessionRole } = useRole()
+  const canGoHub = getAvailableModules(sessionModules, sessionRole).length > 1
   const canEdit = user?.role === 'admin' || user?.role === 'secretaria'
 
   // Load search history + saved queries on mount
@@ -239,6 +243,14 @@ export default function SearchPage() {
                 <Plus className="h-3.5 w-3.5" /> Nova Matrícula
               </button>
             )}
+            {/* Voltar ao Hub: visível direto no cabeçalho, não só dentro do menu. */}
+            {canGoHub && (
+              <button type="button" onClick={() => navigate('/hub')} title="Voltar ao Hub (trocar módulo)"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-2.5 py-1.5 text-xs font-medium text-stone-700 dark:text-slate-200 hover:bg-stone-50 dark:hover:bg-slate-600 transition">
+                <LayoutGrid className="h-4 w-4 text-stone-400 dark:text-slate-400" />
+                <span className="hidden sm:inline">Hub</span>
+              </button>
+            )}
             {/* User menu */}
             <div className="relative">
               <button type="button" onClick={() => setUserMenuOpen(!userMenuOpen)}
@@ -264,7 +276,7 @@ export default function SearchPage() {
                       <Shield className="h-4 w-4 text-stone-400 dark:text-slate-400" /> Gerenciar usuários
                     </button>
                   )}
-                  {getAvailableModules(user?.modules, user?.role).length > 1 && (
+                  {canGoHub && (
                     <button type="button" onClick={() => { setUserMenuOpen(false); navigate('/hub') }}
                       className="flex w-full items-center gap-2 px-3 py-2 text-sm text-stone-700 dark:text-slate-300 hover:bg-stone-50 dark:hover:bg-slate-700">
                       <LayoutGrid className="h-4 w-4 text-stone-400 dark:text-slate-400" /> Hub (trocar módulo)

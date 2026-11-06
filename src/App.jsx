@@ -99,7 +99,7 @@ function App() {
             element={
               <ProtectedRoute
                 requireModule="search"
-                allowedRoles={['super_admin', 'admin', 'secretaria', 'support']}
+                allowedRoles={['super_admin', 'admin', 'secretaria', 'support', 'reception']}
               >
                 <SearchPage />
               </ProtectedRoute>
@@ -288,7 +288,7 @@ function App() {
         <Route
           path="/checkout/metricas"
           element={
-            <ProtectedRoute requireModule="checkout" allowedRoles={['super_admin', 'admin', 'secretaria', 'support', 'infantil_coordination', 'fundamental_coordination']}>
+            <ProtectedRoute requireModule="checkout" allowedRoles={['super_admin', 'admin', 'secretaria', 'support', 'reception']}>
               <CheckoutMetricsPage />
             </ProtectedRoute>
           }

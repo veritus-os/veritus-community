@@ -113,12 +113,12 @@ export default function CheckoutMetricsPage() {
         <div className={`space-y-6 ${loading ? 'opacity-60' : ''}`}>
           {/* Números principais */}
           <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-            <Stat icon={DoorOpen} label="Saídas registradas" value={totals.exits ?? 0} tone="emerald" />
-            <Stat icon={Megaphone} label="Chamadas" value={totals.calls ?? 0} tone="amber" />
-            <Stat icon={Clock3} label="Chamada → sala liberou" value={fmtMin(totals.avg_call_to_release_min)} hint="tempo médio" tone="sky" />
-            <Stat icon={TimerReset} label="Chamada → saiu" value={fmtMin(totals.median_call_to_exit_min)} hint={`mediana · média ${fmtMin(totals.avg_call_to_exit_min)}`} tone="violet" />
-            <Stat icon={ShieldAlert} label="Acima de 10 min" value={totals.over_10_min ?? 0} hint="saídas demoradas" tone="rose" />
-            <Stat icon={Users} label="Exceções" value={totals.exceptions ?? 0} hint={`${totals.by_other_person ?? 0} por pessoa não cadastrada`} tone="slate" />
+            <Stat icon={DoorOpen} label="Saídas registradas" value={totals.exits ?? 0} hint="alunos que saíram pelo sistema" tone="emerald" />
+            <Stat icon={Megaphone} label="Chamadas" value={totals.calls ?? 0} hint="responsável chegou" tone="amber" />
+            <Stat icon={Clock3} label="Tempo até a sala liberar" value={fmtMin(totals.avg_call_to_release_min)} hint="média, da chamada à liberação" tone="sky" />
+            <Stat icon={TimerReset} label="Tempo até sair" value={fmtMin(totals.median_call_to_exit_min)} hint={`metade das saídas leva até isso · média ${fmtMin(totals.avg_call_to_exit_min)}`} tone="violet" />
+            <Stat icon={ShieldAlert} label="Saídas demoradas" value={totals.over_10_min ?? 0} hint="mais de 10 min da chamada até sair" tone="rose" />
+            <Stat icon={Users} label="Exceções" value={totals.exceptions ?? 0} hint={`precisaram de verificação · ${totals.by_other_person ?? 0} retiradas por pessoa fora da lista`} tone="slate" />
           </section>
 
           <div className="grid gap-6 lg:grid-cols-2">
@@ -158,7 +158,7 @@ export default function CheckoutMetricsPage() {
 
           <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
             {/* Por turma */}
-            <Card title="Por turma" hint="onde a saída demora mais">
+            <Card title="Por turma" hint="ordenado da mais lenta para a mais rápida">
               {data.byClass.length === 0 ? <Empty /> : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
@@ -201,7 +201,7 @@ export default function CheckoutMetricsPage() {
                   </ul>
                 )}
               </Card>
-              <Card title="Saídas mais demoradas" hint="chamada → saída">
+              <Card title="As 10 saídas mais demoradas" hint="da chamada até sair">
                 {data.slowest.length === 0 ? <Empty /> : (
                   <ul className="divide-y divide-slate-100 text-xs">
                     {data.slowest.map((r, i) => (
