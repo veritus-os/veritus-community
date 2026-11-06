@@ -99,6 +99,15 @@ export async function localListLogs({ campus = 'todos', from = '', to = '', limi
 }
 
 // Student logs
+export async function localListMetrics({ campus = 'todos', from = '', to = '' } = {}) {
+  const q = new URLSearchParams()
+  if (campus && campus !== 'todos') q.set('campus', campus)
+  if (from) q.set('from', from)
+  if (to) q.set('to', to)
+  const qs = q.toString()
+  return request('GET', `/api/checkout/metrics${qs ? `?${qs}` : ''}`)
+}
+
 export async function localListStudentLogs({ studentId, offset = 0, limit = 50 }) {
   const params = new URLSearchParams({ studentId: String(studentId), offset: String(offset), limit: String(limit) })
   const data = await request('GET', `/api/checkout/student-logs?${params}`)

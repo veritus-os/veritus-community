@@ -818,6 +818,12 @@ export class CheckoutMonitorService {
     }))
   }
 
+  // Métricas agregadas (só no servidor local; a agregação roda no Postgres).
+  async listMetrics({ campus = 'todos', from = '', to = '' } = {}) {
+    if (!this.useLocalApi) throw new Error('As métricas estão disponíveis apenas no servidor local da escola.')
+    return localApi.localListMetrics({ campus, from, to })
+  }
+
   async listStudentLogs({ studentId, period = 'month', from = '', to = '', offset = 0, limit = 20 } = {}) {
     const normalizedStudentId = Number(studentId)
     if (!normalizedStudentId) return { rows: [], hasMore: false, range: resolveLogRange(period, from, to) }

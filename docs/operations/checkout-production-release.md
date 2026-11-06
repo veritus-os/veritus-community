@@ -307,3 +307,20 @@ When `VITE_CHECKOUT_SUPABASE_LOW_EGRESS=true` in development:
 | WiFi drops at school | Medium | Low — optimistic UI keeps last state | Auto-reconnect + manual refresh button |
 | Wrong guardian picked | Low | Medium — student released to wrong person | needs_verification flow + mandatory notes |
 | Concurrent edits conflict | Low | Low — optimistic locking in place | Retry message shown to user |
+
+## Painel da TV e Métricas (2026-11-05)
+
+- **`/checkout/painel`** — painel de chamadas para a TV da sala/recepção. Substitui o microfone: quando a
+  recepção marca "responsável chegou", o nome aparece em letras grandes e é anunciado por voz (Web Speech API
+  do próprio navegador, sem internet e sem custo). Abra numa TV/PC logado com qualquer conta do módulo
+  `checkout`, toque em "Ativar som" (o navegador exige um toque) e deixe em tela cheia.
+  Parâmetros: `?sede=Sede%20Infantil` (uma TV por sede), `?voz=0` (sem voz), `?repetir=2` (repete o anúncio).
+  Vozes pt-BR: no Windows instale a voz "Maria"/"Francisca" (Configurações → Hora e idioma → Fala); no
+  macOS "Luciana"; no Chrome/Android a "Google português do Brasil".
+- **`/checkout/metricas`** — saídas, chamadas, tempo chamada→liberação→saída (média e mediana), saídas acima
+  de 10 min, exceções, por dia, por horário (15 min), por turma e por sede. Perfis: admin, secretaria,
+  suporte e coordenações (cada coordenação vê só a sua sede). Endpoint: `GET /api/checkout/metrics?from&to&campus`.
+- Deploy: mesmo procedimento (`git pull` → `npm install` → `npm run build` → `pm2 restart ecosystem.config.cjs`).
+  Não há migração de banco.
+- **`scripts/dev/seed-checkout-demo.js`** gera dados fictícios **somente em banco local** (`SEED_DEMO=1`,
+  recusa hosts que não sejam localhost). Nunca rode no servidor da escola.
